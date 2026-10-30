@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 7 из 11.** Готовы auth, schedule, membership и **payment-service** (симулятор оплаты), API Gateway (`http://localhost:8000`) и **первый сквозной сценарий**: заказ → оплата → событие в RabbitMQ → активация абонемента. Booking и Notification появляются на шагах 8–9, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 8 из 11.** Готовы auth, schedule, membership, payment и **booking-service**, API Gateway (`http://localhost:8000`). Работает основной сценарий клиента: абонемент → оплата → запись на занятие → отмена, с защитой мест и посещений от гонок. Notification — шаг 9, UI — шаг 10, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -359,6 +359,20 @@ docker compose logs payment-service membership-service | findstr "PaymentSucceed
 ```bash
 docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
 ```
+
+## Проверка шага 8 (запись на занятия)
+
+Нужны опубликованное будущее занятие (шаг 5) и клиент с активным абонементом (шаг 7). В общем Swagger UI под клиентом выберите `booking-service`:
+
+1. `GET /api/availability?session_id=…` — свободные места (`state: OPEN`).
+2. `POST /api/bookings` с `{"session_id":"…"}` и `Idempotency-Key`: запись `CONFIRMED`, свободных мест стало меньше.
+3. `GET /api/bookings/usage/me` — использовано и осталось посещений.
+4. Повторная запись на то же занятие — `409 ALREADY_BOOKED`. На занятие без мест — `SESSION_FULL`. Без абонемента — `MEMBERSHIP_NOT_VALID`.
+5. Под тренером этого занятия: `GET /api/sessions/{id}/bookings` — участники по именам. Под клиентом — `403`.
+6. `POST /api/bookings/{id}/cancel` — отмена: место и посещение возвращаются. Позже чем за 120 минут до начала — `CANCELLATION_WINDOW_CLOSED`.
+7. Под ADMIN в `schedule-service` `POST /api/sessions/{id}/cancel`: через долю секунды все записи на это занятие отменены (`cancel_reason: SESSION_CANCELLED`), посещения возвращены.
+
+Окно отмены настраивается переменной `CANCEL_BEFORE_MINUTES` (по умолчанию 120).
 
 ## Логи, остановка, пересборка одного сервиса
 

@@ -291,6 +291,38 @@ Idempotency-Key: 7c1d…
 
 После `SUCCESS` абонемент появляется **асинхронно**. Клиенту нужно опрашивать `GET /api/memberships/me`, а не считать абонемент активным по ответу оплаты (сценарий — [flows.md](flows.md)).
 
+### Booking: реализовано (шаг 8)
+
+```http
+POST /api/bookings
+Idempotency-Key: 2d4f…
+{"session_id": "9ab0…"}
+```
+
+```json
+{"id": "e469…", "session_id": "9ab0…", "session_title": "Пилатес утром", "trainer_display_name": "Ольга Тренер",
+ "starts_at": "2026-11-01T07:00:00Z", "ends_at": "2026-11-01T08:00:00Z", "status": "CONFIRMED",
+ "created_at": "…", "cancellable": true, "cancellable_until": "2026-11-01T05:00:00Z", "past": false}
+```
+
+| Ситуация | Ответ (`code`) | Что показать пользователю |
+|---|---|---|
+| Занятие ещё не дошло до Booking | `409 SESSION_NOT_READY` | «Запись ещё не открыта, повторите через несколько секунд» |
+| Занятие отменено | `409 SESSION_CANCELLED` | «Занятие отменено» |
+| Занятие уже началось | `409 SESSION_ALREADY_STARTED` | «Занятие уже началось» |
+| Нет абонемента, действующего на дату занятия | `409 MEMBERSHIP_NOT_VALID` | «Нет действующего абонемента» |
+| Уже записан на это занятие | `409 ALREADY_BOOKED` | «Вы уже записаны» |
+| Мест нет | `409 SESSION_FULL` | «Мест нет» |
+| Посещения закончились | `409 VISIT_LIMIT_REACHED` | «Посещения закончились» |
+| Отмена позже чем за 120 минут | `409 CANCELLATION_WINDOW_CLOSED` | «Отмена уже недоступна» |
+| Membership не ответил / недоступен | `504` / `503` | «Сервис временно недоступен» |
+
+- `POST /api/bookings/{id}/cancel` — отмена своей записи. Повтор возвращает текущее состояние.
+- `GET /api/bookings/me?status=CONFIRMED|CANCELLED` — записи и история (`past = true`).
+- `GET /api/bookings/usage/me` — `[{"membership_id", "visit_limit", "unlimited", "used", "remaining"}]`. Учитываются будущие и прошедшие подтверждённые записи.
+- `GET /api/availability?session_id=…&session_id=…` (до 100 id) — `[{"session_id", "state": "OPEN|CANCELLED|NOT_READY", "capacity", "booked", "available", "starts_at"}]`. Источник истины по местам — Booking, а не Schedule.
+- `GET /api/sessions/{id}/bookings` — участники (`display_name` — снимок имени из JWT на момент записи). Доступ только у назначенного тренера этого занятия и ADMIN, остальным `403`.
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)

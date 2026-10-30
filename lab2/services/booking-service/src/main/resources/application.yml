@@ -13,6 +13,11 @@ spring:
   config:
     # Каждый файл каталога секретов становится свойством с именем файла (db_booking_password и т.д.)
     import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:localhost}
+    port: ${FITCLUB_RABBITMQ_PORT:5672}
+    username: booking_service
+    password: ${rabbitmq_booking_password}
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/booking_db}
     username: ${FITCLUB_DB_USER:booking_user}
@@ -33,3 +38,15 @@ fitclub:
   internal:
     # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
     clients: []
+  booking:
+    # Пользователь может отменить запись не позже чем за это время до начала (CANCEL_BEFORE_MINUTES)
+    cancel-before: ${CANCEL_BEFORE_MINUTES:120}m
+    # Своя очередь потребителя (topology.json): SessionPublished, SessionCancelled
+    events-queue: booking-service.events
+    membership:
+      base-url: ${FITCLUB_MEMBERSHIP_URL:http://localhost:8083}
+      service-token: ${service_token_booking_to_membership}
+      connect-timeout: 1s
+      read-timeout: 2s
+      max-attempts: 2
+      retry-backoff: 200ms

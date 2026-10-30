@@ -7,6 +7,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -98,6 +99,30 @@ public class IdempotencyStore {
                 """, ownerId, operation, key, requestHash, fresh.resourceId(), fresh.status().value(),
                 jsonMapper.writeValueAsString(fresh.body()), Timestamp.from(clock.instant()));
         return new Outcome<>(fresh.body(), fresh.status().value(), false);
+    }
+
+    /**
+     * Быстрая проверка без блокировки — до сетевых вызовов сценария: если ключ уже выполнен, сохранённый ответ
+     * возвращается сразу (даже если с тех пор состояние изменилось, например занятие заполнено). Другое тело → 409.
+     * Окончательная проверка всё равно выполняется в execute() под блокировкой.
+     */
+    public <T> Optional<Outcome<T>> lookup(UUID ownerId, String operation, UUID key, Object request,
+            Class<T> responseType) {
+        List<StoredRecord> existing = jdbc.query("""
+                select request_hash, response_status, response_body::text as response_body
+                from idempotency_records where owner_id = ? and operation = ? and idempotency_key = ?
+                """, (rs, i) -> new StoredRecord(rs.getString("request_hash").trim(), rs.getInt("response_status"),
+                rs.getString("response_body")), ownerId, operation, key);
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        StoredRecord stored = existing.getFirst();
+        if (!stored.requestHash().equals(hash(request))) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.IDEMPOTENCY_CONFLICT, "Конфликт ключа",
+                    "Этот Idempotency-Key уже использован с другим запросом. Для нового действия создайте новый ключ.");
+        }
+        return Optional.of(new Outcome<>(jsonMapper.readValue(stored.responseBody(), responseType),
+                stored.status(), true));
     }
 
     private String hash(Object request) {

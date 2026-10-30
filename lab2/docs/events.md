@@ -1,6 +1,6 @@
 # События: контракты v1
 
-> Статус: топология — шаг 1, издатели (outbox) — шаг 5, **потребители, повторы и DLQ — шаг 7** (`EventProcessor`, первый потребитель — membership-service). Сейчас публикуют schedule, payment и membership, потребляет membership. Booking и Notification подключаются на шагах 8–9.
+> Статус: топология — шаг 1, издатели (outbox) — шаг 5, потребители, повторы и DLQ — шаг 7, **booking — шаг 8** (потребляет события занятий, публикует события бронирований). Notification подключается на шаге 9.
 
 ## Конверт события
 
@@ -131,7 +131,16 @@ sequenceDiagram
 | `PaymentSucceeded` | Проверка владельца, суммы и валюты по снимку заказа → заказ `PAID` → абонемент `[completed_at, completed_at + duration)` → `MembershipActivated` | Тот же `event_id` — пропуск. Другой `event_id` о том же платеже — `ALREADY_APPLIED`, срок не продлевается | Несовпадение или заказ оплачен другим платежом → DLQ |
 | `PaymentDeclined` | Ожидающий заказ → `PAYMENT_FAILED` | Заказ уже не ожидает оплаты → игнорируется | Заказ не найден или чужой → DLQ |
 
-Очерёдность событий одного платежа не важна: `PaymentDeclined` после `PaymentSucceeded` ничего не отменяет. Для потоков, где важна последовательность (занятия, бронирования), используется `aggregate_version` — шаги 8–9.
+Очерёдность событий одного платежа не важна: `PaymentDeclined` после `PaymentSucceeded` ничего не отменяет.
+
+### Обработка в booking-service
+
+| Событие | Действие | Устаревшее / повтор |
+|---|---|---|
+| `SessionPublished` | Создать `session_inventory` (снимок, `capacity`, `booked_count = 0`, `OPEN`) | Версия не больше применённой или занятие уже `CANCELLED` → игнорируется |
+| `SessionCancelled` | `CANCELLED`, отменить все `CONFIRMED`-брони с возвратом места и посещения, по каждой — `BookingCancelled` | Уже отменено или версия меньше → игнорируется. Пришло раньше публикации → «надгробие» |
+
+`BookingConfirmed` (`aggregate_version = 1`) и `BookingCancelled` (`aggregate_version = 2`) публикуются через outbox вместе с изменением брони. Получатель — notification-service (шаг 9). Подробности сценариев — [flows.md](flows.md).
 
 ## Гарантии
 

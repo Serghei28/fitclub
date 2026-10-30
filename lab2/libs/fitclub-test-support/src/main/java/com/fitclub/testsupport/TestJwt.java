@@ -75,6 +75,7 @@ public final class TestJwt {
         private Instant issuedAt = Instant.now();
         private Duration ttl = Duration.ofMinutes(15);
         private boolean untrustedKey;
+        private String name;
 
         private Builder(UUID userId, List<String> roles) {
             this.userId = userId;
@@ -94,6 +95,12 @@ public final class TestJwt {
         /** Токен, срок которого истёк заданное время назад (с запасом больше допустимого clock skew). */
         public Builder expiredAgo(Duration ago) {
             this.issuedAt = Instant.now().minus(ago).minus(ttl);
+            return this;
+        }
+
+        /** Claim name (отображаемое имя), как в токенах auth-service. */
+        public Builder name(String value) {
+            this.name = value;
             return this;
         }
 
@@ -120,15 +127,18 @@ public final class TestJwt {
         }
 
         private JwtClaimsSet claims() {
-            return JwtClaimsSet.builder()
+            JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
                     .issuer(issuer)
                     .audience(List.of(audience))
                     .subject(userId.toString())
                     .issuedAt(issuedAt)
                     .expiresAt(issuedAt.plus(ttl))
                     .id(UUID.randomUUID().toString())
-                    .claim("roles", roles)
-                    .build();
+                    .claim("roles", roles);
+            if (name != null) {
+                claims.claim("name", name);
+            }
+            return claims.build();
         }
     }
 

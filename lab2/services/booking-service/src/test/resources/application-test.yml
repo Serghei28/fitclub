@@ -1,2 +1,9 @@
 # Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
 db_booking_password: not-used-with-testcontainers
+rabbitmq_booking_password: guest
+service_token_booking_to_membership: test-service-token-booking-to-membership-0123456789abcdef
+fitclub:
+  booking:
+    membership:
+      read-timeout: 500ms
+      max-attempts: 1
