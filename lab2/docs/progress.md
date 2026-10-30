@@ -12,7 +12,7 @@
 | 4 | API Gateway | Маршруты, проверка JWT, удаление служебных заголовков, закрытие `/internal/**`, request id, обработка недоступного backend; тесты | ⏳ |
 | 5 | schedule-service | Типы, занятия DRAFT→PUBLISHED→CANCELLED, проверка тренера через Auth, outbox `SessionPublished`/`SessionCancelled`, outbox publisher; тесты | ✅ готов и проверен |
 | 6 | membership-service | Тарифы, заказы со снимком, внутренние payment-details и eligibility, Idempotency-Key; тесты | ✅ готов и проверен |
-| 7 | payment-service и первый сквозной сценарий | `PaymentProvider`/`SimulatorPaymentProvider`, идемпотентность, outbox; потребитель в Membership (активация, `MembershipActivated`); retry/DLQ; тесты с RabbitMQ | ⏳ |
+| 7 | payment-service и первый сквозной сценарий | `PaymentProvider`/`SimulatorPaymentProvider`, идемпотентность, outbox; потребитель в Membership (активация, `MembershipActivated`); retry/DLQ; тесты с RabbitMQ | ✅ готов и проверен |
 | 8 | booking-service | Проекция занятий, eligibility, блокировки, учёт лимита, отмена и граница окна, обработка `SessionCancelled`, `Idempotency-Key`; конкурентные тесты | ⏳ |
 | 9 | notification-service | Уведомления, прочтение, сохраняемые напоминания, `NotificationChannel`, tombstone, `Clock`; тесты повторов и восстановления | ⏳ |
 | 10 | UI и финальный Compose | Статический UI на Nginx (все роли), dev-override, demo-профиль и seeding | ⏳ |
@@ -20,20 +20,21 @@
 
 ## Текущее состояние
 
-**Шаг 6 выполнен** (30.10.2026). Работает membership-service (без обработки событий оплаты — шаг 7).
+**Шаг 7 выполнен** (30.10.2026). Первый сквозной сценарий Payment → RabbitMQ → Membership работает.
 
 Что появилось:
-- `fitclub-common`: `IdempotencyStore` (advisory-блокировка, хеш канонического тела, сохранённый ответ, `409 IDEMPOTENCY_CONFLICT`);
-- membership-service: домен `Plan`, `Money`, `PlanSnapshot`, `MembershipOrder`, `Membership` (интервал `[starts_at, ends_at)`); `PlaceOrderUseCase` (снимок тарифа, один ожидающий заказ и один не закончившийся абонемент, повтор для того же тарифа возвращает заказ), `PlanAdminService`, `MembershipQueryService`; узкие порты `PlanRepository`, `OrderRepository`, `MembershipRepository`; API `/api/plans`, `/api/membership-orders`, `/api/memberships/me`; внутренние `/internal/membership-orders/{id}/payment-details` (payment) и `/internal/memberships/eligibility` (booking).
+- `fitclub-messaging`: `EventProcessor` (processed_events в транзакции обработчика, ACK после commit, 3 попытки → DLQ, неисправимые → DLQ сразу, MDC с `event_id`/`correlation_id`), `EventHandler`, `NonRetryableEventException`, настройки контейнера потребителя;
+- payment-service: домен `Payment` (PENDING → SUCCEEDED/DECLINED, конечные статусы не меняются), порт `PaymentProvider` + `SimulatorPaymentProvider`, `CreatePaymentUseCase` (реквизиты из Membership вне транзакции, один платёж на заказ, `Idempotency-Key`), `CompletePaymentUseCase` (статус + outbox `PaymentSucceeded`/`PaymentDeclined`), API `/api/payments`, demo `/api/payments/{id}/simulate` (только local/demo/test);
+- membership-service: `PaymentResultHandler` (сверка владельца, суммы, валюты; заказ → PAID; ровно один абонемент от момента оплаты; `MembershipActivated` в outbox; отказ → PAYMENT_FAILED), AMQP-адаптер `PaymentEventsListener`;
+- Compose: пароли RabbitMQ для payment и membership, токен payment → membership; `.env.example`: `FITCLUB_PROFILES=docker,demo` для демонстрации;
+- [docs/flows.md](flows.md) — сценарий оплаты, транзакции и поведение при сбоях.
 
 Проверки:
-- `mvnw verify` по всем модулям — **BUILD SUCCESS**, 204 теста. membership-service: 5 доменных (снимок не меняется при изменении тарифа, граница `[start, end)`), 6 тестов правил заказа на fake-адаптерах, 4 ArchUnit, 15 интеграционных на PostgreSQL:
-  - цена клиента игнорируется; повтор ключа → тот же заказ и `Idempotent-Replayed`; тот же ключ с другим телом → 409; без ключа → 400;
-  - **8 параллельных заказов одного пользователя с разными ключами → ровно 1 заказ** (один `201`, остальные `200` с тем же id); **6 параллельных повторов одного ключа → действие выполнено 1 раз**;
-  - ожидающий заказ другого тарифа → `PENDING_ORDER_EXISTS`, не закончившийся абонемент → `ACTIVE_MEMBERSHIP_EXISTS`, снятый тариф → `PLAN_NOT_AVAILABLE`, чужой заказ → 404;
-  - payment-details только с токеном payment (booking → 403, JWT → 401), eligibility на границах периода;
-- Docker: через Gateway созданы тарифы «8 посещений в месяц» (45000) и «Безлимит на месяц» (`visit_limit: null`); клиент «Мария» сделала заказ (цена из тарифа), повтор ключа → `Idempotent-Replayed: true`, другой тариф → `PENDING_ORDER_EXISTS`; payment-details отвечает с токеном payment на dev-порту и закрыт снаружи через Gateway (404).
+- `mvnw verify` по всем модулям — **BUILD SUCCESS**, 231 тест. Новые:
+  - payment: 2 доменных, 6 контрактных тестов `PaymentProvider` (симулятор и вторая реализация), 6 тестов правил на fake-адаптерах, 8 интеграционных (сумма с сервера, `X-Service-Token`, повтор и конфликт ключа, **6 параллельных запросов с разными ключами → 1 платёж**, чужой заказ → 404, Membership медленный → 504 без платежа, одно событие при повторах, отказ, чужой `simulate` → 404);
+  - membership: 5 интеграционных тестов потребителя на RabbitMQ (абонемент от момента оплаты; повтор `event_id` и новое событие о том же платеже не создают второй абонемент и не продлевают срок; `MembershipActivated` с правильными `correlation_id`/`causation_id` в очереди notification; несовпадение суммы → DLQ без изменений; испорченное сообщение → DLQ без блокировки очереди; отказ → PAYMENT_FAILED и новый заказ разрешён; отказ после успеха ничего не отменяет);
+- Docker (`FITCLUB_PROFILES=docker,demo`, настоящие права пользователей RabbitMQ): Мария оплатила ожидающий заказ через Gateway → `SUCCEEDED`; повтор `simulate` → `Idempotent-Replayed`; абонемент «8 посещений в месяц» `ACTIVE` на 30 дней; заказ `PAID`; новый заказ → `ACTIVE_MEMBERSHIP_EXISTS`; цепочка в логах по одному `correlation_id`: gateway → payment (`PaymentSucceeded` опубликован) → membership (активирован, `MembershipActivated` опубликован); `MembershipActivated` и `SessionPublished` ждут в очередях notification и booking.
 
 ## Ближайшая задача
 
-Шаг 7: payment-service и первый сквозной сценарий — `PaymentProvider`/`SimulatorPaymentProvider`, создание платежа по заказу (реквизиты из Membership), `Idempotency-Key`, demo-завершение `SUCCESS`/`DECLINE`, outbox `PaymentSucceeded`/`PaymentDeclined`; потребитель событий в Membership (идемпотентная активация, `MembershipActivated`), retry и DLQ.
+Шаг 8: booking-service — проекция занятий из `SessionPublished`/`SessionCancelled` (с `aggregate_version`), eligibility через Membership до транзакции, атомарная запись с блокировками (места и посещения), отмена с границей окна, возврат ресурса один раз, `Idempotency-Key`; конкурентные тесты.

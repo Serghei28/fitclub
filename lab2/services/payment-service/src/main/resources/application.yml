@@ -13,6 +13,11 @@ spring:
   config:
     # Каждый файл каталога секретов становится свойством с именем файла (db_payment_password и т.д.)
     import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:localhost}
+    port: ${FITCLUB_RABBITMQ_PORT:5672}
+    username: payment_service
+    password: ${rabbitmq_payment_password}
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/payment_db}
     username: ${FITCLUB_DB_USER:payment_user}
@@ -33,3 +38,13 @@ fitclub:
   internal:
     # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
     clients: []
+  payment:
+    # Demo-завершение оплаты по умолчанию выключено; включается профилями local, demo, test
+    simulation-endpoint: false
+    membership:
+      base-url: ${FITCLUB_MEMBERSHIP_URL:http://localhost:8083}
+      service-token: ${service_token_payment_to_membership}
+      connect-timeout: 1s
+      read-timeout: 2s
+      max-attempts: 2
+      retry-backoff: 200ms

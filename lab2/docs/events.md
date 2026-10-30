@@ -1,6 +1,6 @@
 # События: контракты v1
 
-> Статус: топология создаётся инфраструктурой (шаг 1). **Издательская сторона реализована на шаге 5** (`libs/fitclub-messaging`, первый издатель — schedule-service). Потребители, retry и DLQ — шаги 7–9.
+> Статус: топология — шаг 1, издатели (outbox) — шаг 5, **потребители, повторы и DLQ — шаг 7** (`EventProcessor`, первый потребитель — membership-service). Сейчас публикуют schedule, payment и membership, потребляет membership. Booking и Notification подключаются на шагах 8–9.
 
 ## Конверт события
 
@@ -106,6 +106,32 @@ sequenceDiagram
 - брокер остановлен (`rabbitmqctl stop_app`) → публикация занятия всё равно `200`, `/ready` = 200, `/actuator/health/messaging` = 503, у события растёт `attempts`; после `start_app` событие доставлено;
 - routing key без привязки → брокер подтверждает приём, но возвращает сообщение, и событие остаётся неотправленным с `last_error = unroutable…`;
 - прошедшее занятие не публикуется, и строка outbox не создаётся.
+
+## Потребитель: идемпотентность, повторы, DLQ (реализовано)
+
+`EventProcessor` (`libs/fitclub-messaging`) обрабатывает каждое входящее сообщение так:
+
+| Шаг | Что происходит |
+|---|---|
+| 1. Разбор | Конверт читается как `EventEnvelope`. Не JSON или нет `event_id` / `event_type` / `payload` → `AmqpRejectAndDontRequeueException` → **DLQ сразу** |
+| 2. Маршрут | Обработчик выбирается по `event_type`. Неизвестный тип → DLQ. Обработчик проверяет `schema_version` (поддерживается 1) |
+| 3. Транзакция | `INSERT INTO processed_events … ON CONFLICT DO NOTHING`. Строка уже была → **повторная доставка, пропуск**. Иначе вызывается обработчик в той же транзакции |
+| 4. ACK | `acknowledge-mode=auto`: контейнер подтверждает сообщение после возврата из метода, то есть **после commit** |
+| 5. Ошибки | `NonRetryableEventException` (противоречивые данные, неверный payload) → DLQ сразу. Прочие исключения (например, БД) → до 3 попыток с паузой 0,5 с и 1 с, затем DLQ |
+| 6. Страховка | Брокер ограничивает число повторных доставок (`x-delivery-limit=5` на quorum-очереди), поэтому «горячего» бесконечного requeue нет |
+
+Во время обработки в MDC стоят `event_id`, `event_type`, `correlation_id` и `causation_id`. Событие-следствие, записанное в outbox внутри обработчика, получает тот же `correlation_id` и `causation_id` = `event_id` события-причины (проверено: `MembershipActivated` ссылается на `PaymentSucceeded`).
+
+Настройки контейнера (`fitclub-messaging-defaults.properties`): `default-requeue-rejected=false`, `prefetch=10`, `missing-queues-fatal=false` (сервис стартует, даже если брокер ещё недоступен, и переподключается сам), встроенный retry контейнера выключен.
+
+### Обработка в membership-service
+
+| Событие | Действие | Повтор | Противоречие |
+|---|---|---|---|
+| `PaymentSucceeded` | Проверка владельца, суммы и валюты по снимку заказа → заказ `PAID` → абонемент `[completed_at, completed_at + duration)` → `MembershipActivated` | Тот же `event_id` — пропуск. Другой `event_id` о том же платеже — `ALREADY_APPLIED`, срок не продлевается | Несовпадение или заказ оплачен другим платежом → DLQ |
+| `PaymentDeclined` | Ожидающий заказ → `PAYMENT_FAILED` | Заказ уже не ожидает оплаты → игнорируется | Заказ не найден или чужой → DLQ |
+
+Очерёдность событий одного платежа не важна: `PaymentDeclined` после `PaymentSucceeded` ничего не отменяет. Для потоков, где важна последовательность (занятия, бронирования), используется `aggregate_version` — шаги 8–9.
 
 ## Гарантии
 

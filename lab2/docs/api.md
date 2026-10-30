@@ -254,6 +254,43 @@ GET /internal/memberships/eligibility?user_id=e957…&at=2026-12-01T07:00:00Z   
 
 Хеш — SHA-256 канонического JSON тела (поля по алфавиту). Ключ действует только в пределах (пользователь, операция). Ошибка действия откатывает транзакцию, и ключ не сохраняется. Новое намерение пользователя требует нового ключа.
 
+### Payment: реализовано (шаг 7)
+
+**Это симулятор оплаты**: он создаёт настоящие записи и события, но не списывает деньги и не запрашивает данные карты.
+
+```http
+POST /api/payments
+Idempotency-Key: 0b8e…
+{"membership_order_id": "57b6…"}
+```
+
+```json
+{"id": "4d0c…", "membership_order_id": "57b6…", "amount_minor": 45000, "currency": "MDL", "status": "PENDING",
+ "provider": "SIMULATOR", "simulated": true, "created_at": "…"}
+```
+
+Тестовое завершение. Маршрут есть только в профилях `local`, `demo` и `test`, в профиле `docker` без `demo` его нет (404):
+
+```http
+POST /api/payments/4d0c…/simulate
+Idempotency-Key: 7c1d…
+{"outcome": "SUCCESS"}        // или "DECLINE"
+```
+
+| Ситуация | Ответ |
+|---|---|
+| Новый платёж | `201`, сумма и валюта из Membership |
+| По заказу уже есть платёж (любой `Idempotency-Key`) | `200` с этим платежом |
+| Тот же ключ с другим телом | `409 IDEMPOTENCY_CONFLICT` |
+| Заказ чужой или не существует | `404 RESOURCE_NOT_FOUND` |
+| Заказ уже оплачен или отклонён | `409 ORDER_NOT_PAYABLE` |
+| Membership не ответил / недоступен / ответил ошибкой | `504` / `503` / `502` |
+| Повтор `simulate` с тем же исходом | `200`, второго события нет |
+| Противоположный исход для завершённого платежа | `409 PAYMENT_ALREADY_COMPLETED` |
+| Чужой платёж (`GET`, `simulate`) | `404` |
+
+После `SUCCESS` абонемент появляется **асинхронно**. Клиенту нужно опрашивать `GET /api/memberships/me`, а не считать абонемент активным по ответу оплаты (сценарий — [flows.md](flows.md)).
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)

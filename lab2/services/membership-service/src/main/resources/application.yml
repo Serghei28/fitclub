@@ -13,6 +13,11 @@ spring:
   config:
     # Каждый файл каталога секретов становится свойством с именем файла (db_membership_password и т.д.)
     import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:localhost}
+    port: ${FITCLUB_RABBITMQ_PORT:5672}
+    username: membership_service
+    password: ${rabbitmq_membership_password}
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/membership_db}
     username: ${FITCLUB_DB_USER:membership_user}
@@ -40,3 +45,6 @@ fitclub:
         token: ${service_token_booking_to_membership}
         paths:
             - /internal/memberships/**
+  membership:
+    # Своя очередь потребителя (topology.json): PaymentSucceeded, PaymentDeclined
+    events-queue: membership-service.events

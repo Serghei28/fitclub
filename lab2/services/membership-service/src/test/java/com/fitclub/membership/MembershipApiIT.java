@@ -69,6 +69,7 @@ class MembershipApiIT {
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("fitclub.security.jwt-public-key", TestJwt::publicKeyLocation);
+        com.fitclub.testsupport.RabbitTestcontainers.register(registry);
     }
 
     static String clientToken(UUID userId) {

@@ -44,6 +44,8 @@ public final class MembershipPorts {
 
         /** Нарушение «один ожидающий заказ на пользователя» → MembershipErrors.pendingOrderExists(). */
         void add(MembershipOrder order);
+
+        void update(MembershipOrder order);
     }
 
     public interface MembershipRepository {
@@ -55,5 +57,14 @@ public final class MembershipPorts {
 
         /** Есть ли у пользователя абонемент, который ещё не закончился (действует или начнётся позже). */
         boolean existsNotEndedAt(UUID userId, Instant moment);
+
+        /** Абонемент по заказу/платежу уже есть (uq_memberships_order / uq_memberships_payment) → false. */
+        boolean addIfAbsent(Membership membership);
+    }
+
+    /** События Membership; реализация пишет их в outbox текущей транзакции. */
+    public interface MembershipEventPublisher {
+
+        void membershipActivated(Membership membership);
     }
 }

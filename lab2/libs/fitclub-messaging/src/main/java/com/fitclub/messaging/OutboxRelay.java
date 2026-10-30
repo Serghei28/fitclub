@@ -117,8 +117,8 @@ public class OutboxRelay {
             rabbit.send(properties.exchange(), event.routingKey(), message, correlation);
             CorrelationData.Confirm confirm = correlation.getFuture()
                     .get(properties.confirmTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            if (!confirm.isAck()) {
-                return "nack: " + confirm.getReason();
+            if (!confirm.ack()) {
+                return "nack: " + confirm.reason();
             }
             if (correlation.getReturned() != null) {
                 return "unroutable: " + correlation.getReturned().getReplyText();

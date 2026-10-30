@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 6 из 11.** Готовы инфраструктура, общие модули, **auth-service**, **API Gateway** (`http://localhost:8000`, общий Swagger UI), **schedule-service** с событиями через transactional outbox и **membership-service** (тарифы, заказы с `Idempotency-Key`, право на посещение). Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 7 из 11.** Готовы auth, schedule, membership и **payment-service** (симулятор оплаты), API Gateway (`http://localhost:8000`) и **первый сквозной сценарий**: заказ → оплата → событие в RabbitMQ → активация абонемента. Booking и Notification появляются на шагах 8–9, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -10,7 +10,8 @@
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Границы шести сервисов, схема компонентов, владение данными, изоляция БД |
 | [docs/api.md](docs/api.md) | Контракт REST, формат ошибок, `Idempotency-Key`, ссылки на Swagger |
-| [docs/events.md](docs/events.md) | Контракты событий, топология RabbitMQ, гарантии доставки |
+| [docs/events.md](docs/events.md) | Контракты событий, топология RabbitMQ, outbox, потребители, DLQ |
+| [docs/flows.md](docs/flows.md) | Сценарии с REST и событиями, транзакции, eventual consistency, сбои |
 | [docs/security.md](docs/security.md) | Роли, пароли, JWT, refresh-токены, служебные токены, секреты, ограничения |
 | [docs/decisions.md](docs/decisions.md) | Проверенные версии, ключевые решения, допущения |
 | [docs/progress.md](docs/progress.md) | План шагов, текущее состояние, последние проверки |
@@ -322,6 +323,41 @@ curl http://localhost:8082/actuator/health/messaging
 
 ```powershell
 curl.exe -s http://localhost:8083/internal/membership-orders/<order_id>/payment-details -H "X-Service-Token: $(Get-Content secrets\service_token_payment_to_membership)"
+```
+
+## Проверка шага 7 (оплата и активация абонемента)
+
+Тестовая оплата — demo-возможность. Включите профиль demo: создайте файл `.env` рядом с `docker-compose.yml` со строкой
+
+```
+FITCLUB_PROFILES=docker,demo
+```
+
+и перезапустите сервисы:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+Дальше в общем Swagger UI под **клиентом**:
+
+1. `membership-service` → `POST /api/membership-orders` с `{"plan_id":"…"}` и заголовком `Idempotency-Key`. Скопируйте `id` заказа.
+2. `payment-service` → `POST /api/payments` с `{"membership_order_id":"…"}` и новым `Idempotency-Key`: платёж `PENDING`, сумма из тарифа.
+3. `POST /api/payments/{id}/simulate` с `{"outcome":"SUCCESS"}`: платёж `SUCCEEDED`. Это тестовая оплата, деньги не списываются.
+4. `membership-service` → `GET /api/memberships/me`: через долю секунды абонемент `ACTIVE`. Он появляется асинхронно, по событию `PaymentSucceeded`.
+
+С `{"outcome":"DECLINE"}` заказ станет `PAYMENT_FAILED`, абонемента не будет, и можно оформить новый заказ.
+
+Путь события виден в логах по одному `correlation_id`:
+
+```bash
+docker compose logs payment-service membership-service | findstr "PaymentSucceeded MembershipActivated"
+```
+
+Очереди и DLQ (`messages` в `.dlq` должно быть 0):
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
 ```
 
 ## Логи, остановка, пересборка одного сервиса

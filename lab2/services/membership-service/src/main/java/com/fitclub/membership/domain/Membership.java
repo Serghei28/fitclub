@@ -1,5 +1,6 @@
 package com.fitclub.membership.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -18,6 +19,17 @@ public record Membership(UUID id, UUID userId, UUID orderId, UUID paymentId, Str
         if (!endsAt.isAfter(startsAt)) {
             throw new IllegalArgumentException("Membership period must be positive");
         }
+    }
+
+    /**
+     * Абонемент по оплаченному заказу: начало — сохранённый момент успешной оплаты (а не время обработки события),
+     * конец — начало + срок тарифа из снимка заказа.
+     */
+    public static Membership activate(UUID id, MembershipOrder paidOrder, Instant now) {
+        Instant start = paidOrder.paidAt();
+        return new Membership(id, paidOrder.userId(), paidOrder.id(), paidOrder.paymentId(),
+                paidOrder.plan().planName(), paidOrder.plan().visitLimit(), start,
+                start.plus(Duration.ofDays(paidOrder.plan().durationDays())), now);
     }
 
     public boolean isValidAt(Instant moment) {

@@ -1,5 +1,6 @@
 package com.fitclub.membership.infrastructure.persistence;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -152,6 +153,20 @@ final class JpaMembershipAdapters {
             }
         }
 
+        @Override
+        public void update(MembershipOrder order) {
+            OrderEntity e = jpa.findById(order.id()).orElseThrow(() -> MembershipErrors.notFound("Заказ"));
+            if (e.version != order.version()) {
+                throw new OptimisticLockingFailureException("Order " + order.id() + " was modified concurrently");
+            }
+            e.status = order.status();
+            e.paymentId = order.paymentId();
+            e.paidAt = order.paidAt();
+            e.failedAt = order.failedAt();
+            e.updatedAt = order.updatedAt();
+            jpa.flush();
+        }
+
         static MembershipOrder toDomain(OrderEntity e) {
             return MembershipOrder.restore(e.id, e.userId,
                     new PlanSnapshot(e.planId, e.planName, e.durationDays, e.visitLimit,
@@ -164,9 +179,24 @@ final class JpaMembershipAdapters {
     static class JpaMembershipRepository implements MembershipRepository {
 
         private final MembershipJpaRepository jpa;
+        private final JdbcTemplate jdbc;
 
-        JpaMembershipRepository(MembershipJpaRepository jpa) {
+        JpaMembershipRepository(MembershipJpaRepository jpa, JdbcTemplate jdbc) {
             this.jpa = jpa;
+            this.jdbc = jdbc;
+        }
+
+        /** INSERT … ON CONFLICT DO NOTHING: второй абонемент по тому же заказу/платежу не создаётся и не ломает транзакцию. */
+        @Override
+        public boolean addIfAbsent(Membership m) {
+            int inserted = jdbc.update("""
+                    insert into memberships (id, user_id, order_id, payment_id, plan_name, visit_limit, starts_at,
+                        ends_at, created_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict do nothing
+                    """, m.id(), m.userId(), m.orderId(), m.paymentId(), m.planName(), m.visitLimit(),
+                    Timestamp.from(m.startsAt()), Timestamp.from(m.endsAt()), Timestamp.from(m.createdAt()));
+            return inserted == 1;
         }
 
         @Override

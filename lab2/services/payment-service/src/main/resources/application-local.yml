@@ -1,0 +1,4 @@
+# Профиль local (запуск из IDE): demo-завершение оплаты доступно для ручной проверки.
+fitclub:
+  payment:
+    simulation-endpoint: true

@@ -76,6 +76,9 @@ class PlaceOrderRulesTest {
             public void add(MembershipOrder order) {
                 orders.add(order);
             }
+
+            public void update(MembershipOrder order) {
+            }
         };
         MembershipRepository membershipRepo = new MembershipRepository() {
             public List<Membership> findByUser(UUID userId) {
@@ -88,6 +91,10 @@ class PlaceOrderRulesTest {
 
             public boolean existsNotEndedAt(UUID userId, Instant moment) {
                 return findByUser(userId).stream().anyMatch(m -> m.notEndedAt(moment));
+            }
+
+            public boolean addIfAbsent(Membership membership) {
+                return memberships.add(membership);
             }
         };
         useCase = new PlaceOrderUseCase(planRepo, orderRepo, membershipRepo, null, Clock.fixed(NOW, ZoneOffset.UTC));

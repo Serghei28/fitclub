@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /**
  * Заказ абонемента. Клиент выбирает только тариф; цена, срок и лимит — снимок тарифа на момент заказа.
- * Переходы статуса выполняет обработка событий оплаты (шаг 7).
+ * Переходы статуса выполняет обработка событий оплаты (PaymentResultHandler).
  */
 public final class MembershipOrder {
 
@@ -47,6 +47,32 @@ public final class MembershipOrder {
             Instant paidAt, Instant failedAt, Instant createdAt, Instant updatedAt, long version) {
         return new MembershipOrder(id, userId, plan, status, paymentId, paidAt, failedAt, createdAt, updatedAt,
                 version);
+    }
+
+    /** Подтверждённая оплата: момент оплаты становится началом абонемента. */
+    public void markPaid(UUID paymentId, Instant paidAt, Instant now) {
+        if (status != OrderStatus.AWAITING_PAYMENT) {
+            throw MembershipErrors.invalidTransition(status, "отметить оплаченным");
+        }
+        this.status = OrderStatus.PAID;
+        this.paymentId = paymentId;
+        this.paidAt = paidAt;
+        this.updatedAt = now;
+    }
+
+    public void markPaymentFailed(UUID paymentId, Instant failedAt, Instant now) {
+        if (status != OrderStatus.AWAITING_PAYMENT) {
+            throw MembershipErrors.invalidTransition(status, "отметить отказ оплаты");
+        }
+        this.status = OrderStatus.PAYMENT_FAILED;
+        this.paymentId = paymentId;
+        this.failedAt = failedAt;
+        this.updatedAt = now;
+    }
+
+    /** Совпадают ли сумма и валюта подтверждённой оплаты со снимком заказа. */
+    public boolean matchesAmount(long amountMinor, String currency) {
+        return plan.price().amountMinor() == amountMinor && plan.price().currency().equals(currency);
     }
 
     public boolean isOwnedBy(UUID candidate) {

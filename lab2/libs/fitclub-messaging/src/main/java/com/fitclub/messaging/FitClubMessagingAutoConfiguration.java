@@ -1,6 +1,7 @@
 package com.fitclub.messaging;
 
 import java.time.Clock;
+import java.time.Duration;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import tools.jackson.databind.json.JsonMapper;
 
-/** Outbox writer, relay и индикатор доставки для сервисов, которые публикуют события. */
+/** Outbox writer, relay, индикатор доставки и идемпотентный обработчик входящих событий. */
 @AutoConfiguration(afterName = {
         "org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration",
         "org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration",
@@ -36,6 +37,15 @@ public class FitClubMessagingAutoConfiguration {
     OutboxRelay outboxRelay(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, RabbitTemplate rabbit,
             OutboxProperties properties, Clock clock) {
         return new OutboxRelay(jdbc, new TransactionTemplate(transactionManager), rabbit, properties, clock);
+    }
+
+    /** Потребитель событий: идемпотентность через processed_events, ограниченные повторы, затем DLQ. */
+    @Bean
+    EventProcessor eventProcessor(JsonMapper jsonMapper, JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
+            Clock clock, @Value("${fitclub.events.consumer.max-attempts:3}") int maxAttempts,
+            @Value("${fitclub.events.consumer.backoff:500ms}") Duration backoff) {
+        return new EventProcessor(jsonMapper, jdbc, new TransactionTemplate(transactionManager), clock, maxAttempts,
+                backoff);
     }
 
     @Bean

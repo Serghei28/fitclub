@@ -1,2 +1,11 @@
 # Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
 db_payment_password: not-used-with-testcontainers
+rabbitmq_payment_password: guest
+service_token_payment_to_membership: test-service-token-payment-to-membership-0123456789abcdef
+fitclub:
+  payment:
+    simulation-endpoint: true
+    membership:
+      # Короткий таймаут без повтора: проверка 504 без долгого ожидания
+      read-timeout: 500ms
+      max-attempts: 1

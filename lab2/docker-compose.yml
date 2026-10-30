@@ -88,6 +88,7 @@ services:
       dockerfile: services/auth-service/Dockerfile
     image: fitclub/auth-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Первый администратор; пароль — секрет auth_initial_admin_password
@@ -120,6 +121,7 @@ services:
       dockerfile: services/schedule-service/Dockerfile
     image: fitclub/schedule-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
@@ -148,6 +150,7 @@ services:
       dockerfile: services/membership-service/Dockerfile
     image: fitclub/membership-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
@@ -156,6 +159,8 @@ services:
       - db_membership_password
       - source: jwt_public_key
         target: jwt_public_key.pem
+      # Свой пользователь RabbitMQ: читает membership-service.events, публикует MembershipActivated
+      - rabbitmq_membership_password
       - service_token_payment_to_membership
       - service_token_booking_to_membership
     depends_on:
@@ -175,6 +180,7 @@ services:
       dockerfile: services/booking-service/Dockerfile
     image: fitclub/booking-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
@@ -200,6 +206,7 @@ services:
       dockerfile: services/payment-service/Dockerfile
     image: fitclub/payment-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
@@ -208,6 +215,9 @@ services:
       - db_payment_password
       - source: jwt_public_key
         target: jwt_public_key.pem
+      # Свой пользователь RabbitMQ и токен исходящих вызовов payment → membership
+      - rabbitmq_payment_password
+      - service_token_payment_to_membership
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
@@ -225,6 +235,7 @@ services:
       dockerfile: services/notification-service/Dockerfile
     image: fitclub/notification-service:1.0.0
     environment:
+      # docker — рабочий режим; docker,demo — учебный стенд (тестовая оплата, demo-данные), см. .env.example
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
@@ -299,6 +310,10 @@ secrets:
     file: ./secrets/service_token_schedule_to_auth
   rabbitmq_schedule_password:
     file: ./secrets/rabbitmq_schedule_password
+  rabbitmq_membership_password:
+    file: ./secrets/rabbitmq_membership_password
+  rabbitmq_payment_password:
+    file: ./secrets/rabbitmq_payment_password
   service_token_payment_to_membership:
     file: ./secrets/service_token_payment_to_membership
   service_token_booking_to_membership:
