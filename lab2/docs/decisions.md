@@ -60,7 +60,13 @@
 | D19 | Одна стандартная цепочка Spring Security для всех сервисов (`FitClubSecurityAutoConfiguration`). Публичные пути — свойством `fitclub.security.public-paths`, роли — `@PreAuthorize`, владение — в use case'ах | Нет копий конфигурации безопасности в шести сервисах. Ошибки 401/403 выдаются в problem+json |
 | D20 | Секреты читаются через `spring.config.import=configtree:${FITCLUB_SECRETS_DIR}`: в Docker это `/run/secrets`, локально `secrets/` | Одна и та же конфигурация для IDE и Compose. В контейнер попадают только секреты конкретного сервиса |
 | D21 | Схемы всех таблиц из задания созданы миграциями `V1` на шаге 2. Уточнения на следующих шагах оформляются новыми версиями `V2…` | Владение данными видно сразу. Применённые миграции не редактируются |
-| D22 | JPA-сущности будут лежать в `infrastructure.persistence`, а не в `domain` | Требование «domain не импортирует JPA» проверяет ArchUnit (`domainIsFrameworkFree`) |
+| D22 | JPA-сущности лежат в `infrastructure.persistence`, а не в `domain`. Адаптер переводит сущность в доменную модель и обратно | Требование «domain не импортирует JPA» проверяет ArchUnit (`domainIsFrameworkFree`). Цена — небольшой код маппинга |
+| D23 | `DomainException` (без Spring) для бизнес-ошибок domain и application, `ApiException` (с HttpStatus) — для технических случаев. Статус по виду ошибки выбирает `GlobalExceptionHandler` | Домен не зависит от HTTP, клиент получает стабильный `code` |
+| D24 | Refresh-токены: SHA-256 вместо BCrypt, ротация с `family_id`, отзыв цепочки при повторном использовании, `SELECT … FOR UPDATE` при ротации | Токен из 256 случайных бит не подбирается, медленный хеш не нужен. Блокировка исключает двойную ротацию |
+| D25 | `POST /api/auth/logout` публичный: подтверждением служит refresh-токен в теле | Выход работает и после истечения access-токена |
+| D26 | Первый ADMIN создаётся `EnsureInitialAdminUseCase` при запуске из email и секрета `auth_initial_admin_password`, идемпотентно | Без этого администрировать систему некому. Пароль не хранится в репозитории и не печатается |
+| D27 | `ProblemErrorController` заменяет `BasicErrorController`: `/error` тоже отвечает problem+json, `request_id` берётся из атрибута запроса | Единый формат даже для ошибок до контроллеров (файрвол Spring Security, `sendError`) |
+| D28 | Тип колонок `CHAR(n)` явно указан в JPA (`@JdbcTypeCode(SqlTypes.CHAR)`) | `ddl-auto=validate` нашёл расхождение CHAR и VARCHAR при первом запуске. Схема остаётся источником истины |
 
 ## Допущения
 

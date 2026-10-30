@@ -43,13 +43,19 @@ public final class TestJwt {
 
     private static final KeyPair TRUSTED = generate();
     private static final KeyPair UNTRUSTED = generate();
-    private static final Path PUBLIC_KEY_FILE = writePublicKey((RSAPublicKey) TRUSTED.getPublic());
+    private static final Path PUBLIC_KEY_FILE = writePem("PUBLIC KEY", TRUSTED.getPublic().getEncoded());
+    private static final Path PRIVATE_KEY_FILE = writePem("PRIVATE KEY", TRUSTED.getPrivate().getEncoded());
 
     private TestJwt() {
     }
 
     public static String publicKeyLocation() {
         return PUBLIC_KEY_FILE.toUri().toString();
+    }
+
+    /** Закрытый ключ той же пары (PKCS#8) — для тестов auth-service, который сам выпускает токены. */
+    public static String privateKeyLocation() {
+        return PRIVATE_KEY_FILE.toUri().toString();
     }
 
     /** Действительный токен пользователя с заданными ролями (CLIENT, TRAINER, ADMIN). */
@@ -136,13 +142,12 @@ public final class TestJwt {
         }
     }
 
-    private static Path writePublicKey(RSAPublicKey key) {
+    private static Path writePem(String type, byte[] der) {
         try {
             Path file = Files.createTempFile("fitclub-test-jwt", ".pem");
             file.toFile().deleteOnExit();
-            String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
-                    .encodeToString(key.getEncoded());
-            Files.writeString(file, "-----BEGIN PUBLIC KEY-----\n" + body + "\n-----END PUBLIC KEY-----\n");
+            String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(der);
+            Files.writeString(file, "-----BEGIN " + type + "-----\n" + body + "\n-----END " + type + "-----\n");
             return file;
         } catch (IOException e) {
             throw new UncheckedIOException(e);

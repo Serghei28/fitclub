@@ -2,3 +2,4 @@ com.fitclub.common.config.FitClubWebAutoConfiguration
 com.fitclub.common.config.FitClubSecurityAutoConfiguration
 com.fitclub.common.config.FitClubHealthAutoConfiguration
 com.fitclub.common.config.FitClubOpenApiAutoConfiguration
+com.fitclub.common.config.FitClubClockAutoConfiguration

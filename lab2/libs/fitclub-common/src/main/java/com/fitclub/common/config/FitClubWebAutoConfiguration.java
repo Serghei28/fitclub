@@ -11,6 +11,7 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.fitclub.common.error.GlobalExceptionHandler;
+import com.fitclub.common.error.ProblemErrorController;
 import com.fitclub.common.error.ProblemResponseWriter;
 import com.fitclub.common.security.AuthenticatedUserArgumentResolver;
 import com.fitclub.common.web.RequestIdFilter;
@@ -18,7 +19,7 @@ import com.fitclub.common.web.RequestIdFilter;
 import tools.jackson.databind.json.JsonMapper;
 
 /** HTTP-инфраструктура: request id, единый формат ошибок, AuthenticatedUser в контроллерах. */
-@AutoConfiguration
+@AutoConfiguration(beforeName = "org.springframework.boot.webmvc.autoconfigure.error.ErrorMvcAutoConfiguration")
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class FitClubWebAutoConfiguration {
 
@@ -39,6 +40,12 @@ public class FitClubWebAutoConfiguration {
     @Bean
     GlobalExceptionHandler globalExceptionHandler() {
         return new GlobalExceptionHandler();
+    }
+
+    /** Заменяет BasicErrorController Spring Boot: /error тоже отвечает problem+json. */
+    @Bean
+    ProblemErrorController problemErrorController() {
+        return new ProblemErrorController();
     }
 
     @Bean

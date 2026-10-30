@@ -17,7 +17,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import com.fitclub.testsupport.PostgresTestcontainers;
-import com.fitclub.testsupport.TestJwt;
 
 /**
  * Потеря собственной БД: /ready сообщает о неготовности (503), а /health (liveness процесса) остаётся UP.
@@ -38,7 +37,7 @@ class DatabaseOutageIT {
 
     @DynamicPropertySource
     static void jwtKey(DynamicPropertyRegistry registry) {
-        registry.add("fitclub.security.jwt-public-key", TestJwt::publicKeyLocation);
+        AuthTestKeys.register(registry);
     }
 
     @Test

@@ -27,6 +27,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
         String requestId = RequestIds.acceptOrGenerate(request.getHeader(RequestIds.HEADER));
         long started = System.nanoTime();
         MDC.put(RequestIds.MDC_KEY, requestId);
+        request.setAttribute(RequestIds.ATTRIBUTE, requestId);
         response.setHeader(RequestIds.HEADER, requestId);
         try {
             chain.doFilter(request, response);

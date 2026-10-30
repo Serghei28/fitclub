@@ -63,6 +63,9 @@ public class GenerateSecrets {
             writeIfAbsent(dir.resolve("service_token_" + call[0] + "_to_" + call[1]), randomToken(32));
         }
 
+        // Пароль первого администратора (auth-service создаёт его при запуске, если ADMIN ещё нет)
+        writeIfAbsent(dir.resolve("auth_initial_admin_password"), randomToken(12));
+
         generateJwtKeys(dir);
         writeRabbitUsers(dir);
 

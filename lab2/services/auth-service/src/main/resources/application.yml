@@ -33,9 +33,20 @@ fitclub:
       - /api/auth/register
       - /api/auth/login
       - /api/auth/refresh
+      # logout принимает refresh-токен в теле: владение токеном и есть подтверждение
+      - /api/auth/logout
   internal:
     clients:
       - name: schedule-service
         token: ${service_token_schedule_to_auth}
         paths:
             - /internal/users/**
+  auth:
+    jwt-private-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_private_key.pem
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+    # Первый администратор (явный bootstrap): создаётся, только если есть секрет auth_initial_admin_password
+    initial-admin:
+      email: ${FITCLUB_AUTH_INITIAL_ADMIN_EMAIL:admin@fitclub.local}
+      password: ${auth_initial_admin_password:}
+      display-name: "Администратор клуба"

@@ -90,12 +90,18 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
       FITCLUB_SECRETS_DIR: /run/secrets
+      # Первый администратор; пароль — секрет auth_initial_admin_password
+      FITCLUB_AUTH_INITIAL_ADMIN_EMAIL: ${FITCLUB_AUTH_INITIAL_ADMIN_EMAIL:-admin@fitclub.local}
       # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
       # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/auth_db
     secrets:
       - db_auth_password
       - source: jwt_public_key
         target: jwt_public_key.pem
+      # Закрытый ключ подписи JWT монтируется только в auth-service
+      - source: jwt_private_key
+        target: jwt_private_key.pem
+      - auth_initial_admin_password
       - service_token_schedule_to_auth
     depends_on:
       postgres-bootstrap:
@@ -258,6 +264,10 @@ secrets:
     file: ./secrets/rabbitmq_users.json
   jwt_public_key:
     file: ./secrets/jwt_public_key.pem
+  jwt_private_key:
+    file: ./secrets/jwt_private_key.pem
+  auth_initial_admin_password:
+    file: ./secrets/auth_initial_admin_password
   service_token_schedule_to_auth:
     file: ./secrets/service_token_schedule_to_auth
   service_token_payment_to_membership:

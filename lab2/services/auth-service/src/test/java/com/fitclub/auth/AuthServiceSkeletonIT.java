@@ -21,7 +21,6 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fitclub.testsupport.PostgresTestcontainers;
-import com.fitclub.testsupport.TestJwt;
 
 /**
  * Каркас auth-service на настоящем PostgreSQL: миграции Flyway применяются,
@@ -41,7 +40,7 @@ class AuthServiceSkeletonIT {
 
     @DynamicPropertySource
     static void jwtKey(DynamicPropertyRegistry registry) {
-        registry.add("fitclub.security.jwt-public-key", TestJwt::publicKeyLocation);
+        AuthTestKeys.register(registry);
     }
 
     @Test

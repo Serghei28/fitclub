@@ -23,7 +23,7 @@
 | Auth | `POST /api/auth/register` | публичный | Регистрация, всегда с ролью CLIENT |
 | Auth | `POST /api/auth/login` | публичный | Вход: access + refresh |
 | Auth | `POST /api/auth/refresh` | публичный (refresh в теле) | Ротация refresh, новый access |
-| Auth | `POST /api/auth/logout` | авторизованный | Отзыв refresh |
+| Auth | `POST /api/auth/logout` | публичный (refresh в теле) | Отзыв цепочки refresh-токенов, идемпотентно, 204 |
 | Auth | `GET /api/auth/me` | авторизованный | Текущий профиль |
 | Auth | `GET /api/admin/users?role=&q=&page=&size=` | ADMIN | Список/поиск пользователей |
 | Auth | `PATCH /api/admin/users/{id}/roles` | ADMIN | Назначение ролей |
@@ -57,6 +57,53 @@
 
 `GET /api/sessions/mine` и `GET /api/notifications/unread-count` уточняют исходный контракт: в задании эти сценарии описаны («список собственных занятий тренера», «количество непрочитанных»), но отдельные пути не названы.
 
+### Auth: реализовано (шаг 3)
+
+Регистрация (`201`, всегда роль `CLIENT`):
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{"email": "anna@example.com", "password": "S3cure-pass", "display_name": "Анна Петрова"}
+```
+
+```json
+{"id": "8c1e…", "email": "anna@example.com", "display_name": "Анна Петрова", "roles": ["CLIENT"],
+ "active": true, "created_at": "2026-10-30T16:00:00Z"}
+```
+
+Вход и refresh возвращают один формат (`Cache-Control: no-store`):
+
+```json
+{"token_type": "Bearer", "access_token": "eyJ…", "expires_in": 900,
+ "access_token_expires_at": "2026-10-30T16:15:00Z",
+ "refresh_token": "q3T…", "refresh_token_expires_at": "2026-11-06T16:00:00Z",
+ "user": {"id": "8c1e…", "email": "anna@example.com", "display_name": "Анна Петрова", "roles": ["CLIENT"], "active": true, "created_at": "…"}}
+```
+
+`POST /api/auth/refresh` и `POST /api/auth/logout` принимают `{"refresh_token": "…"}`.
+
+| Ситуация | Ответ |
+|---|---|
+| Email уже занят (без учёта регистра и пробелов) | `409 EMAIL_ALREADY_USED`, `field_errors[0].field = email` |
+| Пароль короче 8 символов / длиннее 72 байт UTF-8 | `400 WEAK_PASSWORD` / `400 PASSWORD_TOO_LONG` |
+| Неверный email или пароль | `401 INVALID_CREDENTIALS` (одинаково для обоих случаев) |
+| Refresh истёк, отозван или использован повторно | `401 INVALID_REFRESH_TOKEN` |
+| Не ADMIN вызывает `/api/admin/**` | `403 ACCESS_DENIED` |
+| ADMIN снимает ADMIN с себя | `409 CANNOT_REVOKE_OWN_ADMIN` |
+| `size` > 100 | `400 VALIDATION_ERROR` |
+
+`GET /api/admin/users?role=TRAINER&q=ольга&page=0&size=20` сортирует по email и ищет подстроку в email или имени без учёта регистра. `PATCH /api/admin/users/{id}/roles` с телом `{"roles": ["CLIENT", "TRAINER"]}` заменяет набор ролей целиком.
+
+Внутренний `GET /internal/users/{id}/trainer-status` (только `X-Service-Token` schedule → auth):
+
+```json
+{"user_id": "f19f…", "active": true, "trainer": true, "display_name": "Ольга Тренер"}
+```
+
+Для неизвестного пользователя — `404 RESOURCE_NOT_FOUND`.
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)
@@ -66,6 +113,8 @@
 | Auth | `GET /internal/users/{id}/trainer-status` | schedule | Активен ли пользователь и есть ли у него роль TRAINER, плюс `display_name` |
 | Membership | `GET /internal/membership-orders/{id}/payment-details` | payment | Владелец, сумма, валюта, статус заказа |
 | Membership | `GET /internal/memberships/eligibility?user_id=&at=` | booking | `membership_id`, результат, `[starts_at, ends_at)`, `visit_limit` |
+
+Ошибки, возникающие до контроллеров (например, отказ файрвола Spring Security для пути с `//`), отдаёт `ProblemErrorController` в том же формате problem+json.
 
 Каждый внутренний endpoint принимает только токен своего вызывающего (`X-Service-Token`, сравнение за постоянное время) и отклоняет остальные с `401`/`403` в формате problem+json.
 

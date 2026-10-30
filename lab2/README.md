@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 2 из 11.** Готовы инфраструктура (PostgreSQL с шестью изолированными БД, RabbitMQ с топологией), общий технический модуль и **каркасы шести сервисов**. Каждый сервис имеет свою БД со схемой Flyway, JSON-логи, единый формат ошибок, проверку JWT и служебных токенов, `/health`, `/ready` и Swagger. Бизнес-API появляется со следующими шагами, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 3 из 11.** Готовы инфраструктура, общий технический модуль, каркасы шести сервисов и **полностью реализованный auth-service**: регистрация, вход, JWT RS256, refresh-токены с ротацией, роли и администрирование. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -11,6 +11,7 @@
 | [docs/architecture.md](docs/architecture.md) | Границы шести сервисов, схема компонентов, владение данными, изоляция БД |
 | [docs/api.md](docs/api.md) | Контракт REST, формат ошибок, `Idempotency-Key`, ссылки на Swagger |
 | [docs/events.md](docs/events.md) | Контракты событий, топология RabbitMQ, гарантии доставки |
+| [docs/security.md](docs/security.md) | Роли, пароли, JWT, refresh-токены, служебные токены, секреты, ограничения |
 | [docs/decisions.md](docs/decisions.md) | Проверенные версии, ключевые решения, допущения |
 | [docs/progress.md](docs/progress.md) | План шагов, текущее состояние, последние проверки |
 
@@ -99,7 +100,36 @@ docker compose ps
 - `/health` — liveness процесса.
 - `/ready` — готовность: собственная БД доступна и все миграции применены.
 
-Бизнес-endpoint'ов на шаге 2 ещё нет, поэтому Swagger показывает пустой список операций.
+Бизнес-endpoint'ы пока есть только у auth-service, у остальных Swagger показывает пустой список операций.
+
+## Первый администратор
+
+При запуске auth-service создаёт администратора, если его ещё нет:
+
+- email — `admin@fitclub.local` (меняется переменной `FITCLUB_AUTH_INITIAL_ADMIN_EMAIL` в `.env`);
+- пароль — в файле `secrets/auth_initial_admin_password`. Его создаёт генератор секретов; если файла нет, запустите генератор ещё раз.
+
+Посмотреть пароль:
+
+```powershell
+Get-Content secrets\auth_initial_admin_password
+```
+
+## Проверка шага 3 (auth-service)
+
+Удобнее всего в Swagger UI: http://localhost:8081/swagger-ui.html.
+
+1. `POST /api/auth/register` — зарегистрируйте пользователя (роль будет `CLIENT`, даже если добавить в тело `"roles":["ADMIN"]`).
+2. `POST /api/auth/login` под `admin@fitclub.local` → скопируйте `access_token` → кнопка **Authorize** → вставьте токен.
+3. `GET /api/admin/users` — список пользователей. `PATCH /api/admin/users/{id}/roles` с `{"roles":["CLIENT","TRAINER"]}` — назначение тренера.
+4. `POST /api/auth/refresh` с `refresh_token` выдаёт новую пару. Повторный refresh **старым** токеном вернёт `401` и отзовёт всю цепочку.
+5. `POST /api/auth/logout` отзывает refresh-токен. Access-токен действует до своего срока (15 минут), см. [docs/security.md](docs/security.md).
+
+Из терминала тело запроса с кириллицей надёжнее передавать файлом в UTF-8: создайте `body.json` в VS Code и выполните:
+
+```powershell
+curl.exe -s -X POST http://localhost:8081/api/auth/register -H "Content-Type: application/json" --data-binary "@body.json"
+```
 
 ## Проверка шага 2
 

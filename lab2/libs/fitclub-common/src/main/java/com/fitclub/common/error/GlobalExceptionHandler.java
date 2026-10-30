@@ -49,6 +49,22 @@ public class GlobalExceptionHandler {
         return respond(ApiProblem.of(ex.status().value(), ex.code(), ex.title(), ex.detail(), request.getRequestURI()));
     }
 
+    @ExceptionHandler(DomainException.class)
+    ResponseEntity<ApiProblem> handleDomain(DomainException ex, HttpServletRequest request) {
+        int status = switch (ex.kind()) {
+            case VALIDATION -> 400;
+            case UNAUTHORIZED -> 401;
+            case FORBIDDEN -> 403;
+            case NOT_FOUND -> 404;
+            case CONFLICT -> 409;
+        };
+        log.info("Business rule rejected request: {}", ex.code());
+        List<ApiProblem.FieldError> fieldErrors = ex.field() == null
+                ? null
+                : List.of(new ApiProblem.FieldError(ex.field(), ex.detail()));
+        return respond(ApiProblem.of(status, ex.code(), ex.title(), ex.detail(), request.getRequestURI(), fieldErrors));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiProblem> handleBodyValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<ApiProblem.FieldError> errors = ex.getBindingResult().getFieldErrors().stream()

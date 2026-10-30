@@ -179,6 +179,19 @@ class CommonWebSecurityTest {
         }
 
         @Test
+        void containerErrorPageUsesSameProblemFormat() throws Exception {
+            // Так контейнер вызывает /error после sendError (например, после отказа файрвола Spring Security)
+            ResultActions result = mvc.perform(get("/error")
+                    .requestAttr(jakarta.servlet.RequestDispatcher.ERROR_STATUS_CODE, 400)
+                    .requestAttr(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI, "/internal/users//x")
+                    // request_id исходного запроса: при error-dispatch MDC уже очищен, значение берётся из атрибута
+                    .requestAttr(com.fitclub.common.web.RequestIds.ATTRIBUTE, "original-request-01"));
+            assertProblem(result, 400, "MALFORMED_REQUEST");
+            result.andExpect(jsonPath("$.instance").value("/internal/users//x"))
+                    .andExpect(jsonPath("$.request_id").value("original-request-01"));
+        }
+
+        @Test
         void unknownPathIsNotFoundForAuthenticatedUser() throws Exception {
             assertProblem(getWithToken("/api/does-not-exist", token), 404, "RESOURCE_NOT_FOUND");
         }
