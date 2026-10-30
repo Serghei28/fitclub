@@ -13,6 +13,11 @@ spring:
   config:
     # Каждый файл каталога секретов становится свойством с именем файла (db_schedule_password и т.д.)
     import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:localhost}
+    port: ${FITCLUB_RABBITMQ_PORT:5672}
+    username: schedule_service
+    password: ${rabbitmq_schedule_password}
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/schedule_db}
     username: ${FITCLUB_DB_USER:schedule_user}
@@ -33,3 +38,14 @@ fitclub:
   internal:
     # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
     clients: []
+  schedule:
+    auth:
+      base-url: ${FITCLUB_AUTH_URL:http://localhost:8081}
+      service-token: ${service_token_schedule_to_auth}
+      connect-timeout: 1s
+      read-timeout: 2s
+      max-attempts: 2
+      retry-backoff: 200ms
+  outbox:
+    poll-interval: 1s
+    batch-size: 50

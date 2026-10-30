@@ -1,6 +1,6 @@
 # События: контракты v1
 
-> Статус: контракт согласован на этапе 1, топология брокера уже создаётся инфраструктурой. Издатели, потребители, outbox, retry и DLQ реализуются на этапах 5–9, тогда же этот документ дополняется фактическими деталями.
+> Статус: топология создаётся инфраструктурой (шаг 1). **Издательская сторона реализована на шаге 5** (`libs/fitclub-messaging`, первый издатель — schedule-service). Потребители, retry и DLQ — шаги 7–9.
 
 ## Конверт события
 
@@ -68,7 +68,46 @@
 | `notification_service` | — | — | своя очередь |
 | `fitclub_admin` | всё | всё | всё (только Management UI) |
 
-## Гарантии (план реализации)
+## Издатель: как устроен outbox (реализовано)
+
+```mermaid
+sequenceDiagram
+    participant API as SessionController
+    participant UC as ScheduleCommandService
+    participant Auth as auth-service
+    participant DB as schedule_db
+    participant Relay as OutboxRelay
+    participant MQ as RabbitMQ
+    API->>UC: POST /api/sessions/{id}/publish
+    UC->>Auth: GET /internal/users/{id}/trainer-status (вне транзакции, таймауты)
+    Auth-->>UC: trainer=true, display_name
+    UC->>DB: BEGIN; UPDATE sessions (PUBLISHED, version+1); INSERT outbox_events; COMMIT
+    UC-->>API: 200 PUBLISHED
+    loop каждую секунду
+        Relay->>DB: SELECT … FOR UPDATE SKIP LOCKED (неотправленные)
+        Relay->>MQ: publish persistent, mandatory, ждать confirm
+        MQ-->>Relay: ack (и нет basic.return)
+        Relay->>DB: UPDATE published_at
+    end
+```
+
+| Компонент | Файл | Что делает |
+|---|---|---|
+| `OutboxWriter` | `libs/fitclub-messaging/.../OutboxWriter.java` | Пишет событие в `outbox_events` **только внутри открытой транзакции** (иначе `IllegalStateException`). Заполняет `event_id`, `occurred_at`, `producer`, `correlation_id` (request_id запроса или событие-причина), `causation_id` |
+| `OutboxRelay` | `.../OutboxRelay.java` | Раз в `fitclub.outbox.poll-interval` (1 с) берёт до 50 событий `FOR UPDATE SKIP LOCKED`, публикует с `mandatory=true`, ждёт publisher confirm (5 с). Отмечает отправленным только при `ack` **и** отсутствии возврата |
+| Повтор | `OutboxProperties.backoffAfter` | Неудача → `attempts+1`, `last_error`, `next_attempt_at` = 2 с, 4 с, 8 с … до 5 минут. При недоступном брокере проход прерывается до следующего цикла |
+| `OutboxHealthIndicator` | `.../OutboxHealthIndicator.java` | DOWN, если есть события старше 60 с без отправки. Вместе с `rabbit` входит в группу `/actuator/health/messaging`, **не** в `/ready` |
+| Издатель schedule | `services/schedule-service/.../OutboxSessionEventPublisher.java` | Адаптер порта `SessionEventPublisher`: `SessionPublished` (полный снимок занятия) и `SessionCancelled` |
+
+Свойства AMQP-сообщения: `delivery_mode=PERSISTENT`, `content_type=application/json`, `message_id=event_id`, `type=event_type`, `correlation_id`. Приложение не объявляет топологию (`spring.rabbitmq.dynamic=false`, у пользователя нет прав `configure`).
+
+Проверено тестами `ScheduleApiIT`:
+- публикация занятия → строка outbox в той же транзакции → сообщение в `booking-service.events` с полным конвертом;
+- брокер остановлен (`rabbitmqctl stop_app`) → публикация занятия всё равно `200`, `/ready` = 200, `/actuator/health/messaging` = 503, у события растёт `attempts`; после `start_app` событие доставлено;
+- routing key без привязки → брокер подтверждает приём, но возвращает сообщение, и событие остаётся неотправленным с `last_error = unroutable…`;
+- прошедшее занятие не публикуется, и строка outbox не создаётся.
+
+## Гарантии
 
 - **Издатель**: transactional outbox. Бизнес-изменение и строка `outbox_events` фиксируются одной транзакцией PostgreSQL. Фоновый publisher отправляет сообщение с `mandatory=true`, ждёт publisher confirm и проверяет, что сообщение не вернулось как unroutable. Только после этого строка помечается отправленной. Сбой между отправкой и отметкой даёт **повтор** с тем же `event_id`.
 - **Потребитель**: обработка и вставка в `processed_events(event_id)` выполняются одной локальной транзакцией. ACK отправляется после commit. Дубликат распознаётся по `event_id`, устаревшее событие — по `aggregate_version`.

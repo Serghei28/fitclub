@@ -33,6 +33,29 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED, "Доступ запрещён", detail);
     }
 
+    /** 503: зависимый сервис не принимает соединение. */
+    public static ApiException dependencyUnavailable() {
+        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.DEPENDENCY_UNAVAILABLE,
+                "Сервис временно недоступен", "Связанный сервис временно недоступен. Повторите попытку позже.");
+    }
+
+    /** 504: зависимый сервис не ответил за отведённое время. */
+    public static ApiException dependencyTimeout() {
+        return new ApiException(HttpStatus.GATEWAY_TIMEOUT, ErrorCodes.DEPENDENCY_TIMEOUT,
+                "Сервис не ответил вовремя", "Связанный сервис не ответил вовремя. Повторите попытку позже.");
+    }
+
+    /** 502: зависимый сервис ответил ошибкой или некорректными данными. */
+    public static ApiException dependencyBadResponse() {
+        return new ApiException(HttpStatus.BAD_GATEWAY, ErrorCodes.DEPENDENCY_BAD_RESPONSE,
+                "Некорректный ответ сервиса", "Связанный сервис вернул некорректный ответ. Повторите попытку позже.");
+    }
+
+    public boolean isTransientDependencyFailure() {
+        return status == HttpStatus.SERVICE_UNAVAILABLE || status == HttpStatus.GATEWAY_TIMEOUT
+                || status == HttpStatus.BAD_GATEWAY;
+    }
+
     public HttpStatus status() {
         return status;
     }

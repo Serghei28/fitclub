@@ -128,6 +128,9 @@ services:
       - db_schedule_password
       - source: jwt_public_key
         target: jwt_public_key.pem
+      # Пароль своего пользователя RabbitMQ и токен исходящих вызовов schedule → auth
+      - rabbitmq_schedule_password
+      - service_token_schedule_to_auth
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
@@ -294,6 +297,8 @@ secrets:
     file: ./secrets/auth_initial_admin_password
   service_token_schedule_to_auth:
     file: ./secrets/service_token_schedule_to_auth
+  rabbitmq_schedule_password:
+    file: ./secrets/rabbitmq_schedule_password
   service_token_payment_to_membership:
     file: ./secrets/service_token_payment_to_membership
   service_token_booking_to_membership:

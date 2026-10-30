@@ -10,7 +10,7 @@
 | 2 | Общий модуль и каркасы шести сервисов | `fitclub-common` (JSON-логи, `X-Request-ID`/MDC, problem+json, обработчики ошибок Security, проверка `X-Service-Token`, `/health` и `/ready`), шесть приложений с `main`, типизированной конфигурацией, Flyway V1, OpenAPI, Dockerfile; ArchUnit-правила слоёв; сервисы в Compose | ✅ готов и проверен |
 | 3 | auth-service | Регистрация, вход, RS256 JWT, refresh с ротацией и отзывом, роли, admin API, внутренний trainer-status; тесты | ✅ готов и проверен |
 | 4 | API Gateway | Маршруты, проверка JWT, удаление служебных заголовков, закрытие `/internal/**`, request id, обработка недоступного backend; тесты | ⏳ |
-| 5 | schedule-service | Типы, занятия DRAFT→PUBLISHED→CANCELLED, проверка тренера через Auth, outbox `SessionPublished`/`SessionCancelled`, outbox publisher; тесты | ⏳ |
+| 5 | schedule-service | Типы, занятия DRAFT→PUBLISHED→CANCELLED, проверка тренера через Auth, outbox `SessionPublished`/`SessionCancelled`, outbox publisher; тесты | ✅ готов и проверен |
 | 6 | membership-service | Тарифы, заказы со снимком, внутренние payment-details и eligibility, Idempotency-Key; тесты | ⏳ |
 | 7 | payment-service и первый сквозной сценарий | `PaymentProvider`/`SimulatorPaymentProvider`, идемпотентность, outbox; потребитель в Membership (активация, `MembershipActivated`); retry/DLQ; тесты с RabbitMQ | ⏳ |
 | 8 | booking-service | Проекция занятий, eligibility, блокировки, учёт лимита, отмена и граница окна, обработка `SessionCancelled`, `Idempotency-Key`; конкурентные тесты | ⏳ |
@@ -20,23 +20,19 @@
 
 ## Текущее состояние
 
-**Шаг 4 выполнен** (30.10.2026). Работает API Gateway.
+**Шаг 5 выполнен** (30.10.2026). Работают schedule-service и издательская сторона событий.
 
 Что появилось:
-- модуль `gateway` (Spring Cloud Gateway Server WebFlux 5.0.4): `GatewayRoutes` (маршруты с явным порядком, `/internal/**` не публикуется), `GatewaySecurityConfiguration` (реактивная проверка JWT RS256), `RequestIdFilter` (X-Request-ID, JSON-лог с `route`, `duration_ms`), `PathGuardFilter` (`/internal` → 404, `..`/`//`/`;` → 400), `StripInternalHeadersFilter` (удаляет `X-Service-Token`), `GatewayErrorHandler` (503/504/502/404 в problem+json), общий Swagger UI для шести сервисов;
-- Dockerfile и сервис `gateway` в Compose (`127.0.0.1:8000`), healthcheck по `/ready`;
-- в сервисах `server.forward-headers-strategy=framework`: OpenAPI через Gateway указывает на адрес Gateway.
+- `libs/fitclub-messaging`: `EventEnvelope`, `OutboxWriter`, `OutboxRelay` (publisher confirms + returns, backoff), `OutboxHealthIndicator`, настройки RabbitMQ и группа health `messaging`;
+- `fitclub-common`: `InternalServiceClient` (таймауты, `X-Service-Token`, `X-Request-ID`, повтор GET, 502/503/504), фабрики `ApiException.dependency*`;
+- schedule-service: домен `Session` (DRAFT → PUBLISHED → CANCELLED, снимок зафиксирован после публикации, version), `TrainingType`; `ScheduleCommandService` (сетевой вызов вне транзакции, событие в той же транзакции), `ScheduleQueryService` (черновики только ADMIN); порты `SessionRepository`, `TrainingTypeRepository`, `TrainerDirectory`, `SessionEventPublisher`, `TransactionRunner`; адаптеры JPA, `AuthTrainerDirectory`, `OutboxSessionEventPublisher`; API `/api/training-types`, `/api/sessions` (+ `/mine`, `/publish`, `/cancel`);
+- `fitclub-test-support`: `RabbitTestcontainers` (RabbitMQ 4.1.8 с топологией из `infrastructure/rabbitmq/topology.json`, остановка и запуск брокера);
+- в Compose schedule-service получает свой пароль RabbitMQ и токен schedule → auth.
 
 Проверки:
-- `mvnw verify` — **BUILD SUCCESS**, всего 142 теста. Gateway: 15 интеграционных тестов с настоящим Gateway и WireMock-сервисами и 2 ArchUnit:
-  - маршрутизация (участники занятия → booking, занятие → schedule), проброс токена, `X-Service-Token` удаляется, ошибки сервиса проходят без изменений, OpenAPI с `X-Forwarded-Host`;
-  - 401 без токена и с поддельным или истёкшим токеном (до сервиса не доходит), `/internal/**` → 404, `..`/`%2e%2e`/`;` → 400;
-  - `X-Request-ID` передаётся сервису и возвращается, недопустимый заменяется;
-  - остановленный сервис → 503 `DEPENDENCY_UNAVAILABLE`, медленный → 504 `DEPENDENCY_TIMEOUT` за ~1 с, `/health` и `/ready` Gateway не зависят от сервисов;
-- Docker: семь приложений `healthy`; вход ADMIN, `/api/auth/me` и `/api/admin/users` через Gateway; один `request_id` в логах Gateway и auth-service; `/internal/...` → 404; `--path-as-is /api/auth/../../internal/...` → 400; `docker compose stop notification-service` → `503 DEPENDENCY_UNAVAILABLE`; Swagger UI Gateway 200, `servers` = `http://localhost:8000`.
-
-Найдено и исправлено: Gateway 5 не передаёт `X-Forwarded-*` без `trusted-proxies`, из-за этого OpenAPI через Gateway показывал внутренний адрес `http://auth-service:8080`.
+- `mvnw verify` по всем модулям — **BUILD SUCCESS**, 178 тестов. schedule-service: 7 доменных тестов, 8 тестов сценариев на fake-адаптерах, 8 тестов HTTP-клиента против WireMock (контракт и заголовки, 404 → пусто, таймаут за < 1,5 с, повтор 5xx, без повтора 401, битое тело → 502, обрыв соединения, закрытый порт → 503), 4 ArchUnit, 13 интеграционных на PostgreSQL + RabbitMQ + WireMock-Auth, 5 каркасных;
+- Docker: семь приложений `healthy`; через Gateway созданы тип «Пилатес» и черновик с тренером «Ольга Тренер» (имя получено из Auth), публикация → `version 1`, изменение после публикации → `409 SESSION_NOT_EDITABLE`; строка outbox отправлена (`published_at`), сообщение лежит в `booking-service.events` (1 сообщение, ждёт booking-service); один `request_id` в логах Gateway, schedule и auth и как `correlation_id` события.
 
 ## Ближайшая задача
 
-Шаг 5: schedule-service — типы тренировок, занятия DRAFT → PUBLISHED → CANCELLED, проверка тренера через внутренний API Auth (HTTP-клиент с таймаутами и X-Request-ID), outbox `SessionPublished`/`SessionCancelled` и outbox publisher в RabbitMQ.
+Шаг 6: membership-service — тарифы, заказы со снимком тарифа, один ожидающий заказ и один действующий абонемент на пользователя, `Idempotency-Key` для заказа, внутренние `payment-details` и `eligibility`.

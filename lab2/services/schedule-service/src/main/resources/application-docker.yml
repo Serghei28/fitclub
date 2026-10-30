@@ -5,3 +5,10 @@ server:
 spring:
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://postgres:5432/schedule_db}
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:rabbitmq}
+
+fitclub:
+  schedule:
+    auth:
+      base-url: ${FITCLUB_AUTH_URL:http://auth-service:8080}

@@ -143,6 +143,49 @@ Content-Type: application/json
 
 Для неизвестного пользователя — `404 RESOURCE_NOT_FOUND`.
 
+### Schedule: реализовано (шаг 5)
+
+Создание черновика (ADMIN). Тренер проверяется во внутреннем API Auth, его имя сохраняется снимком:
+
+```http
+POST /api/sessions
+{"training_type_id": "47d7…", "trainer_id": "f19f…", "title": "Пилатес утром",
+ "starts_at": "2026-11-01T07:00:00Z", "ends_at": "2026-11-01T08:00:00Z", "capacity": 12}
+```
+
+```json
+{"id": "9ab0…", "training_type_id": "47d7…", "training_type_name": "Пилатес", "title": "Пилатес утром",
+ "trainer_id": "f19f…", "trainer_display_name": "Ольга Тренер", "starts_at": "2026-11-01T07:00:00Z",
+ "ends_at": "2026-11-01T08:00:00Z", "capacity": 12, "status": "DRAFT", "editable": true, "version": 0}
+```
+
+`POST /api/sessions/{id}/publish` переводит занятие в `PUBLISHED` (`version` 1) и в той же транзакции создаёт `SessionPublished`. `POST /api/sessions/{id}/cancel` с `{"reason": "…"}` создаёт `SessionCancelled`, повторная отмена ничего не меняет. `GET /api/sessions?from=…&to=…&trainer_id=…&status=…` сортирует по началу занятия. `GET /api/sessions/mine` — занятия тренера.
+
+| Ситуация | Ответ |
+|---|---|
+| Конец не позже начала, длительность > 24 ч | `400 INVALID_SESSION_PERIOD` |
+| Вместимость вне 1..500 | `400 VALIDATION_ERROR` / `INVALID_CAPACITY` |
+| Пользователь не найден, отключён или не TRAINER | `409 TRAINER_NOT_ELIGIBLE` |
+| Изменение опубликованного или отменённого занятия | `409 SESSION_NOT_EDITABLE` |
+| Публикация начавшегося или прошедшего занятия | `409 SESSION_IN_PAST` |
+| Отмена начавшегося опубликованного занятия | `409 SESSION_ALREADY_STARTED` |
+| Черновик для не-ADMIN | `404 RESOURCE_NOT_FOUND` (существование не раскрывается) |
+| Auth ответил 5xx / не ответил / недоступен | `502 DEPENDENCY_BAD_RESPONSE` / `504 DEPENDENCY_TIMEOUT` / `503 DEPENDENCY_UNAVAILABLE` |
+
+### Политика ошибок зависимостей (межсервисный HTTP)
+
+`InternalServiceClient` (`fitclub-common`) применяется для всех внутренних вызовов:
+
+| Что произошло | Ответ клиенту | Повтор |
+|---|---|---|
+| Соединение не установлено (порт закрыт, имя не резолвится, connect timeout) | `503 DEPENDENCY_UNAVAILABLE` | да, для GET |
+| Ответ не получен за read timeout | `504 DEPENDENCY_TIMEOUT` | да, для GET |
+| Зависимость ответила 5xx или вернула некорректное тело | `502 DEPENDENCY_BAD_RESPONSE` | 5xx — да, тело — нет |
+| Зависимость ответила 401/403 (ошибка конфигурации токена) | `502 DEPENDENCY_BAD_RESPONSE` | нет |
+| Зависимость ответила 404 | решает бизнес-код (например, «тренер не найден» → 409) | нет |
+
+Таймауты задаются в конфигурации каждого клиента (`fitclub.schedule.auth.*`: connect 1 с, read 2 с, 2 попытки, пауза 200 мс). Повторяются только безопасные GET. Сетевой вызов выполняется до открытия транзакции.
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)

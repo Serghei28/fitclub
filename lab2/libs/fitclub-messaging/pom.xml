@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.fitclub</groupId>
+        <artifactId>fitclub-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>fitclub-messaging</artifactId>
+    <name>FitClub :: messaging</name>
+    <description>
+        Техническая часть событий для сервисов с RabbitMQ: конверт события, transactional outbox
+        (запись в той же транзакции и фоновая публикация с publisher confirms), идемпотентная обработка.
+        Без бизнес-событий и доменной логики: какие события публиковать, решает каждый сервис.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.fitclub</groupId>
+            <artifactId>fitclub-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fitclub</groupId>
+            <artifactId>fitclub-test-support</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

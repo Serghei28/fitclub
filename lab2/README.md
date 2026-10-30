@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 4 из 11.** Готовы инфраструктура, общий технический модуль, каркасы шести сервисов, **auth-service** (регистрация, вход, JWT RS256, refresh-токены, роли) и **API Gateway** — единая точка входа `http://localhost:8000` с общим Swagger UI. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 5 из 11.** Готовы инфраструктура, общие модули, **auth-service**, **API Gateway** (`http://localhost:8000`, общий Swagger UI) и **schedule-service** с событиями через transactional outbox и RabbitMQ. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -23,7 +23,8 @@ lab2/
 ├── docker-compose.yml                  инфраструктура + шесть сервисов
 ├── docker-compose.dev.yml              dev-override: порты сервисов 8081–8086 на 127.0.0.1
 ├── libs/
-│   ├── fitclub-common/                 техника: JSON-логи, X-Request-ID, problem+json, JWT, X-Service-Token, health
+│   ├── fitclub-common/                 техника: JSON-логи, X-Request-ID, problem+json, JWT, X-Service-Token, health, HTTP-клиент
+│   ├── fitclub-messaging/              конверт события, transactional outbox, relay в RabbitMQ
 │   └── fitclub-test-support/           только для тестов: PostgreSQL Testcontainers, тестовые JWT, ArchUnit-правила
 ├── services/
 │   └── <name>-service/                 auth, schedule, membership, booking, payment, notification
@@ -279,6 +280,34 @@ docker compose logs gateway auth-service membership-service | findstr my-trace-0
 ```
 
 В Bash вместо `findstr` используйте `grep`.
+
+## Проверка шага 5 (schedule-service и события)
+
+В общем Swagger UI (http://localhost:8000/swagger-ui.html) выберите `schedule-service`, авторизуйтесь токеном администратора и выполните:
+
+1. `POST /api/training-types` с `{"name":"Пилатес"}`.
+2. `POST /api/sessions` с `training_type_id`, `trainer_id` (id пользователя с ролью TRAINER из шага 3), временем в будущем и `capacity`. В ответе `status = DRAFT` и `trainer_display_name`: имя пришло из auth-service.
+3. `POST /api/sessions/{id}/publish` переводит занятие в `PUBLISHED`, `version = 1`. Попытка `PATCH` после этого вернёт `409 SESSION_NOT_EDITABLE`.
+
+Событие лежит в очереди booking-service, который появится на шаге 8, и не теряется:
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
+```
+
+Строка outbox отправлена:
+
+```bash
+docker compose exec postgres psql -U postgres -d schedule_db -c "select event_type, aggregate_version, published_at, attempts from outbox_events"
+```
+
+Состояние доставки событий — отдельно от готовности HTTP:
+
+```bash
+curl http://localhost:8082/actuator/health/messaging
+```
+
+Если остановить брокер (`docker compose stop rabbitmq`), публикация занятия всё равно пройдёт: событие сохранится в outbox. `/ready` останется `200`, а `messaging` станет `DOWN`. После `docker compose start rabbitmq` событие будет отправлено.
 
 ## Логи, остановка, пересборка одного сервиса
 

@@ -42,6 +42,7 @@ class ScheduleServiceSkeletonIT {
     @DynamicPropertySource
     static void jwtKey(DynamicPropertyRegistry registry) {
         registry.add("fitclub.security.jwt-public-key", TestJwt::publicKeyLocation);
+        com.fitclub.testsupport.RabbitTestcontainers.register(registry);
     }
 
     @Test

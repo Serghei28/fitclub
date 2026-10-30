@@ -28,6 +28,7 @@
         <!-- Модули добавляются по этапам, см. docs/progress.md -->
         <module>libs/fitclub-test-support</module>
         <module>libs/fitclub-common</module>
+        <module>libs/fitclub-messaging</module>
         <module>services/auth-service</module>
         <module>services/schedule-service</module>
         <module>services/membership-service</module>
