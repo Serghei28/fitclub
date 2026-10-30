@@ -26,6 +26,14 @@
 
     <modules>
         <!-- Модули добавляются по этапам, см. docs/progress.md -->
+        <module>libs/fitclub-test-support</module>
+        <module>libs/fitclub-common</module>
+        <module>services/auth-service</module>
+        <module>services/schedule-service</module>
+        <module>services/membership-service</module>
+        <module>services/booking-service</module>
+        <module>services/payment-service</module>
+        <module>services/notification-service</module>
     </modules>
 
     <properties>
@@ -77,6 +85,14 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <!-- spring-boot:run стартует из корня lab2: относительный путь secrets/ одинаков с IDE -->
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <configuration>
+                        <workingDirectory>${maven.multiModuleProjectDirectory}</workingDirectory>
+                    </configuration>
+                </plugin>
+                <plugin>
                     <!-- Интеграционные тесты (*IT) с Testcontainers запускаются отдельной фазой verify -->
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
@@ -93,6 +109,10 @@
         </pluginManagement>
 
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>

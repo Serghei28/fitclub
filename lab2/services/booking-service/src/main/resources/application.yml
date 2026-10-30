@@ -1,0 +1,35 @@
+# FitClub Booking Service
+# Профили:
+#   local  (по умолчанию) — запуск из IDE/терминала, инфраструктура в Docker на localhost;
+#   docker — запуск в Docker Compose (имена контейнеров, порт 8080, секреты в /run/secrets);
+#   demo   — дополнительно к docker: demo-возможности (появятся на следующих шагах);
+#   test   — автотесты (Testcontainers).
+# Технические настройки по умолчанию (логи, health, JSON) — libs/fitclub-common/.../fitclub-defaults.properties
+spring:
+  application:
+    name: booking-service
+  profiles:
+    default: local
+  config:
+    # Каждый файл каталога секретов становится свойством с именем файла (db_booking_password и т.д.)
+    import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  datasource:
+    url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/booking_db}
+    username: ${FITCLUB_DB_USER:booking_user}
+    password: ${db_booking_password}
+
+server:
+  port: ${PORT:8084}
+
+fitclub:
+  openapi:
+    title: "FitClub Booking Service"
+    description: "Запись на занятия, вместимость, отмена и учёт использованных посещений."
+  security:
+    jwt-public-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_public_key.pem
+    issuer: fitclub-auth
+    audience: fitclub-api
+    public-paths: []
+  internal:
+    # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
+    clients: []

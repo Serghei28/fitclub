@@ -1,0 +1,4 @@
+# Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
+db_membership_password: not-used-with-testcontainers
+service_token_payment_to_membership: test-service-token-payment-to-membership-0123456789abcdef
+service_token_booking_to_membership: test-service-token-booking-to-membership-0123456789abcdef

@@ -1,0 +1,7 @@
+# Профиль docker: адреса внутри сети Compose. Секреты монтируются в /run/secrets (FITCLUB_SECRETS_DIR).
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${FITCLUB_DB_URL:jdbc:postgresql://postgres:5432/booking_db}

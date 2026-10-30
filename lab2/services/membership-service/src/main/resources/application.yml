@@ -1,0 +1,42 @@
+# FitClub Membership Service
+# Профили:
+#   local  (по умолчанию) — запуск из IDE/терминала, инфраструктура в Docker на localhost;
+#   docker — запуск в Docker Compose (имена контейнеров, порт 8080, секреты в /run/secrets);
+#   demo   — дополнительно к docker: demo-возможности (появятся на следующих шагах);
+#   test   — автотесты (Testcontainers).
+# Технические настройки по умолчанию (логи, health, JSON) — libs/fitclub-common/.../fitclub-defaults.properties
+spring:
+  application:
+    name: membership-service
+  profiles:
+    default: local
+  config:
+    # Каждый файл каталога секретов становится свойством с именем файла (db_membership_password и т.д.)
+    import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  datasource:
+    url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/membership_db}
+    username: ${FITCLUB_DB_USER:membership_user}
+    password: ${db_membership_password}
+
+server:
+  port: ${PORT:8083}
+
+fitclub:
+  openapi:
+    title: "FitClub Membership Service"
+    description: "Тарифы, заказы абонементов, активация и срок действия, право на посещение."
+  security:
+    jwt-public-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_public_key.pem
+    issuer: fitclub-auth
+    audience: fitclub-api
+    public-paths: []
+  internal:
+    clients:
+      - name: payment-service
+        token: ${service_token_payment_to_membership}
+        paths:
+            - /internal/membership-orders/**
+      - name: booking-service
+        token: ${service_token_booking_to_membership}
+        paths:
+            - /internal/memberships/**

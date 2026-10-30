@@ -7,7 +7,7 @@
 | # | Шаг | Содержание | Статус |
 |---|---|---|---|
 | 1 | Каркас и инфраструктура | Структура `lab2`, родительский POM, Maven Wrapper, генератор секретов, bootstrap шести БД и ролей, топология RabbitMQ, Compose с PostgreSQL и RabbitMQ, контракты REST/событий, решения по версиям | ✅ готов и проверен |
-| 2 | Общий модуль и каркасы шести сервисов | `fitclub-common` (JSON-логи, `X-Request-ID`/MDC, problem+json, обработчики ошибок Security, проверка `X-Service-Token`, `/health` и `/ready`), шесть приложений с `main`, типизированной конфигурацией, Flyway V1, OpenAPI, Dockerfile; ArchUnit-правила слоёв; сервисы в Compose | ⏳ |
+| 2 | Общий модуль и каркасы шести сервисов | `fitclub-common` (JSON-логи, `X-Request-ID`/MDC, problem+json, обработчики ошибок Security, проверка `X-Service-Token`, `/health` и `/ready`), шесть приложений с `main`, типизированной конфигурацией, Flyway V1, OpenAPI, Dockerfile; ArchUnit-правила слоёв; сервисы в Compose | ✅ готов и проверен |
 | 3 | auth-service | Регистрация, вход, RS256 JWT, refresh с ротацией и отзывом, роли, admin API, внутренний trainer-status; тесты | ⏳ |
 | 4 | API Gateway | Маршруты, проверка JWT, удаление служебных заголовков, закрытие `/internal/**`, request id, обработка недоступного backend; тесты | ⏳ |
 | 5 | schedule-service | Типы, занятия DRAFT→PUBLISHED→CANCELLED, проверка тренера через Auth, outbox `SessionPublished`/`SessionCancelled`, outbox publisher; тесты | ⏳ |
@@ -20,25 +20,26 @@
 
 ## Текущее состояние
 
-**Шаг 1 выполнен.**
+**Шаг 2 выполнен** (30.10.2026, Windows 11, Temurin 21.0.13, Docker Desktop 4.97).
 
-Проверено в среде разработки:
-- версии стека по Maven Central, BOM и `start.spring.io` (подробно в [decisions.md](decisions.md));
-- контрольные суммы Maven Wrapper и дистрибутива Maven 3.9.16;
-- синтаксис shell-скриптов (`sh -n`), корректность `topology.json` и `pom.xml`.
+Что появилось:
+- `libs/fitclub-common`: JSON-логи (Spring Boot structured logging, формат logstash с полями `timestamp`, `service`, `level`, `request_id`, `message`), `RequestIdFilter`, `GlobalExceptionHandler` и `ApiProblem` (problem+json), entry point и access denied handler Spring Security в том же формате, проверка JWT RS256 (`iss`, `aud`, `exp`, `sub`, только RS256), отображение `roles` → authorities, `ServiceTokenFilter` для `/internal/**`, индикатор `migrations`, общая схема OpenAPI;
+- `libs/fitclub-test-support`: PostgreSQL 17.11 в Testcontainers, выпуск тестовых JWT, общие ArchUnit-правила;
+- шесть сервисов: `main`, `application.yml` и профили `local`/`docker`/`demo`/`test`, Flyway V1 со схемами всех таблиц из задания, Dockerfile (multi-stage, non-root), `ArchitectureTest`, `*ServiceSkeletonIT`;
+- Compose: шесть сервисов с healthcheck по `/ready` и отдельными секретами, `docker-compose.dev.yml` с портами 8081–8086, `.vscode/launch.json`.
 
-Проверено на Windows 11 с Temurin 21.0.13 (30.10.2026):
-- `java infrastructure/secrets/GenerateSecrets.java secrets` создаёт 19 файлов, повторный запуск ничего не перезаписывает (хеш ключа не меняется), `rabbitmq_users.json` — корректный JSON с ожидаемыми правами;
-- `mvnw.cmd -q validate` проходит: Maven 3.9.16 скачан wrapper'ом, правила enforcer выполнены.
+Проверки:
+- `mvnw verify` — **BUILD SUCCESS**:
+  - `fitclub-common`: 27 тестов (JWT: истёкший, чужой ключ, неверные iss/aud, HS256, неизвестная роль; формат ошибок 400/401/403/404/409/500/503 без внутренних подробностей; request id; служебные токены и разрешённые пути);
+  - каждый сервис: 4 ArchUnit + 5 интеграционных на настоящем PostgreSQL;
+  - `auth-service`: `DatabaseOutageIT` — после остановки БД `/ready` = 503, `/health` = 200;
+- `docker compose build` и `up` с dev-override: все шесть сервисов `healthy`, `/health`, `/ready`, `/v3/api-docs`, `/swagger-ui.html` отвечают 200;
+- ответ без токена — `401 problem+json` с переданным `X-Request-ID`; неверный `X-Service-Token` — 401; токен booking на маршруте payment — 403;
+- `flyway_schema_history.installed_by` = `<service>_user`: миграции применены собственной ролью;
+- локальный режим: `java -jar services/notification-service/target/notification-service.jar` из `lab2` (профиль `local`, секреты из `secrets/`) стартует и `/ready` = UP.
 
-Проверено в Docker Desktop 4.97 (WSL 2), 30.10.2026:
-- `docker compose up -d`: `postgres` и `rabbitmq` — healthy, `postgres-bootstrap` — `Exited (0)`, созданы шесть БД с владельцами `<service>_user`;
-- `verify-isolation.sh`: 42/42 `OK`, `isolation check passed` (каждая роль открывает только свою БД, `postgres` закрыта);
-- RabbitMQ (vhost `fitclub`): 6 quorum-очередей с DLX и `x-delivery-limit=5`, 10 bindings, 6 пользователей, `guest` отсутствует;
-- `docker compose down` → `up -d`: volumes сохраняются, bootstrap повторно завершается успешно (идемпотентность).
-
-Шаг 1 полностью проверен.
+Шаг 1 (инфраструктура) проверен ранее: изоляция БД 42/42, топология RabbitMQ, сохранность volumes.
 
 ## Ближайшая задача
 
-Шаг 2: модуль `fitclub-common` и каркасы шести сервисов.
+Шаг 3: auth-service — регистрация, вход, RS256 JWT, refresh-токены с ротацией и отзывом, роли, admin API, внутренний `trainer-status`.

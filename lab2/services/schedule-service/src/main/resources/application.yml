@@ -1,0 +1,35 @@
+# FitClub Schedule Service
+# Профили:
+#   local  (по умолчанию) — запуск из IDE/терминала, инфраструктура в Docker на localhost;
+#   docker — запуск в Docker Compose (имена контейнеров, порт 8080, секреты в /run/secrets);
+#   demo   — дополнительно к docker: demo-возможности (появятся на следующих шагах);
+#   test   — автотесты (Testcontainers).
+# Технические настройки по умолчанию (логи, health, JSON) — libs/fitclub-common/.../fitclub-defaults.properties
+spring:
+  application:
+    name: schedule-service
+  profiles:
+    default: local
+  config:
+    # Каждый файл каталога секретов становится свойством с именем файла (db_schedule_password и т.д.)
+    import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  datasource:
+    url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/schedule_db}
+    username: ${FITCLUB_DB_USER:schedule_user}
+    password: ${db_schedule_password}
+
+server:
+  port: ${PORT:8082}
+
+fitclub:
+  openapi:
+    title: "FitClub Schedule Service"
+    description: "Типы тренировок, расписание, назначение тренеров, публикация и отмена занятий."
+  security:
+    jwt-public-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_public_key.pem
+    issuer: fitclub-auth
+    audience: fitclub-api
+    public-paths: []
+  internal:
+    # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
+    clients: []

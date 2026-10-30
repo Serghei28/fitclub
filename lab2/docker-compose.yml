@@ -1,6 +1,7 @@
 # FitClub: локальное окружение.
-# Этап 1: только инфраструктура (PostgreSQL + bootstrap БД, RabbitMQ с топологией).
-# Бизнес-сервисы, Gateway и UI добавляются следующими этапами (docs/progress.md).
+# Шаг 2: инфраструктура (PostgreSQL + bootstrap БД, RabbitMQ с топологией) и шесть бизнес-сервисов.
+# Gateway и UI добавляются следующими шагами (docs/progress.md). Порты сервисов публикуются только
+# dev-override: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # Перед первым запуском сгенерируйте секреты (см. README, раздел «Первый запуск»).
 # Остановка без потери данных: docker compose down   (НЕ используйте -v: он удаляет volumes)
@@ -80,6 +81,160 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # --- Бизнес-сервисы: собираются из исходников, у каждого своя БД и свои секреты ---
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    image: fitclub/auth-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/auth_db
+    secrets:
+      - db_auth_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+      - service_token_schedule_to_auth
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  schedule-service:
+    build:
+      context: .
+      dockerfile: services/schedule-service/Dockerfile
+    image: fitclub/schedule-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/schedule_db
+    secrets:
+      - db_schedule_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  membership-service:
+    build:
+      context: .
+      dockerfile: services/membership-service/Dockerfile
+    image: fitclub/membership-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/membership_db
+    secrets:
+      - db_membership_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+      - service_token_payment_to_membership
+      - service_token_booking_to_membership
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: services/booking-service/Dockerfile
+    image: fitclub/booking-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/booking_db
+    secrets:
+      - db_booking_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    image: fitclub/payment-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/payment_db
+    secrets:
+      - db_payment_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    image: fitclub/notification-service:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: ${FITCLUB_PROFILES:-docker}
+      FITCLUB_SECRETS_DIR: /run/secrets
+      # Адрес собственной БД можно заменить, например на отдельный сервер PostgreSQL:
+      # FITCLUB_DB_URL: jdbc:postgresql://other-host:5432/notification_db
+    secrets:
+      - db_notification_password
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   rabbitmq-data:
@@ -101,3 +256,11 @@ secrets:
     file: ./secrets/db_notification_password
   rabbitmq_users:
     file: ./secrets/rabbitmq_users.json
+  jwt_public_key:
+    file: ./secrets/jwt_public_key.pem
+  service_token_schedule_to_auth:
+    file: ./secrets/service_token_schedule_to_auth
+  service_token_payment_to_membership:
+    file: ./secrets/service_token_payment_to_membership
+  service_token_booking_to_membership:
+    file: ./secrets/service_token_booking_to_membership

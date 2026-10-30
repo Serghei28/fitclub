@@ -1,0 +1,11 @@
+# Контекст сборки образов — корень lab2. Секреты и результаты сборки в образ не попадают.
+secrets/
+.env
+**/target/
+.git/
+.idea/
+.vscode/
+docs/
+frontend/
+tests/
+*.md

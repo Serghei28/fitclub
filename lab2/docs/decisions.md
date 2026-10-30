@@ -2,7 +2,7 @@
 
 ## Проверка версий
 
-Проверено 30.10.2026 по первоисточникам: метаданные Maven Central, BOM-файлы Spring Boot и springdoc, API `start.spring.io/actuator/info` с диапазонами `bom-ranges`, Docker Hub. Это **заявленная** совместимость. На шаге 1 фактически проверены Maven Wrapper (`validate`), образы PostgreSQL и RabbitMQ и Temurin 21.0.13. Сборка Spring-модулей проверяется начиная с шага 2 (см. [progress.md](progress.md)).
+Проверено 30.10.2026 по первоисточникам: метаданные Maven Central, BOM-файлы Spring Boot и springdoc, API `start.spring.io/actuator/info` с диапазонами `bom-ranges`, Docker Hub. Это **заявленная** совместимость. На шаге 1 фактически проверены Maven Wrapper (`validate`), образы PostgreSQL и RabbitMQ и Temurin 21.0.13. На шаге 2 весь набор собран и протестирован: `mvnw verify`, Testcontainers и `docker compose build` (см. [progress.md](progress.md)).
 
 | Компонент | Версия | Источник и основание |
 |---|---|---|
@@ -33,7 +33,7 @@
 
 - Версии, которыми управляет Spring Boot BOM, не переопределяются. Свои версии заданы только для Spring Cloud, springdoc, ArchUnit и WireMock.
 - `latest`, SNAPSHOT, RC, M и beta запрещены. Для зависимостей запрет проверяет `maven-enforcer-plugin` (`requireReleaseDeps`), для образов указаны точные теги.
-- Пока не подтверждена сборка и запуск Spring-приложений: модулей ещё нет. Результаты каждого прогона записываются в [progress.md](progress.md).
+- Сборка и запуск подтверждены на шаге 2. Результаты каждого прогона записываются в [progress.md](progress.md).
 
 ## Архитектурные решения (ADR, кратко)
 
@@ -53,6 +53,14 @@
 | D12 | Порты инфраструктуры публикуются только на `127.0.0.1` и задаются переменными | Сервисы можно запускать из IDE, наружу из локальной сети ничего не открыто |
 | D13 | Время хранится как `Instant`/UTC, в API передаётся в ISO 8601 со смещением, в UI показывается в `Europe/Chisinau` | Бизнес-тесты используют внедряемый `Clock` |
 | D14 | Деньги — `long amount_minor` + `currency` (ISO 4217), в demo используется MDL | Никаких float/double |
+| D15 | JSON-логи через встроенный structured logging Spring Boot (формат logstash + `logging.structured.json.*`), без отдельной библиотеки | Поля `timestamp`, `service`, `level`, `request_id`, `message` задаются конфигурацией. MDC очищается в `RequestIdFilter` после каждого запроса |
+| D16 | Общие технические настройки — `fitclub-defaults.properties` в `fitclub-common`, подключаются `EnvironmentPostProcessor` с низшим приоритетом | Шесть сервисов не дублируют одинаковые настройки логов и health. Любое значение можно переопределить в `application.yml` сервиса |
+| D17 | Собственный `ApiProblem` (record) вместо `ProblemDetail` Spring | Одинаковая сериализация в контроллерах и в фильтрах Security. Расширения `code`, `request_id`, `field_errors` всегда на верхнем уровне |
+| D18 | `/health` и `/ready` — группы Actuator `liveness` и `readiness` с `additional-path`. В readiness входят `db` и `migrations` (Flyway без pending и failed) | Liveness не зависит от соседних сервисов и БД. RabbitMQ в readiness не входит (появится отдельным индикатором на шаге 5) |
+| D19 | Одна стандартная цепочка Spring Security для всех сервисов (`FitClubSecurityAutoConfiguration`). Публичные пути — свойством `fitclub.security.public-paths`, роли — `@PreAuthorize`, владение — в use case'ах | Нет копий конфигурации безопасности в шести сервисах. Ошибки 401/403 выдаются в problem+json |
+| D20 | Секреты читаются через `spring.config.import=configtree:${FITCLUB_SECRETS_DIR}`: в Docker это `/run/secrets`, локально `secrets/` | Одна и та же конфигурация для IDE и Compose. В контейнер попадают только секреты конкретного сервиса |
+| D21 | Схемы всех таблиц из задания созданы миграциями `V1` на шаге 2. Уточнения на следующих шагах оформляются новыми версиями `V2…` | Владение данными видно сразу. Применённые миграции не редактируются |
+| D22 | JPA-сущности будут лежать в `infrastructure.persistence`, а не в `domain` | Требование «domain не импортирует JPA» проверяет ArchUnit (`domainIsFrameworkFree`) |
 
 ## Допущения
 

@@ -1,0 +1,2 @@
+# Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
+db_payment_password: not-used-with-testcontainers

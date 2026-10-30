@@ -1,0 +1,35 @@
+# FitClub Notification Service
+# Профили:
+#   local  (по умолчанию) — запуск из IDE/терминала, инфраструктура в Docker на localhost;
+#   docker — запуск в Docker Compose (имена контейнеров, порт 8080, секреты в /run/secrets);
+#   demo   — дополнительно к docker: demo-возможности (появятся на следующих шагах);
+#   test   — автотесты (Testcontainers).
+# Технические настройки по умолчанию (логи, health, JSON) — libs/fitclub-common/.../fitclub-defaults.properties
+spring:
+  application:
+    name: notification-service
+  profiles:
+    default: local
+  config:
+    # Каждый файл каталога секретов становится свойством с именем файла (db_notification_password и т.д.)
+    import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  datasource:
+    url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/notification_db}
+    username: ${FITCLUB_DB_USER:notification_user}
+    password: ${db_notification_password}
+
+server:
+  port: ${PORT:8086}
+
+fitclub:
+  openapi:
+    title: "FitClub Notification Service"
+    description: "Внутренние уведомления, отметка прочтения и сохраняемые напоминания."
+  security:
+    jwt-public-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_public_key.pem
+    issuer: fitclub-auth
+    audience: fitclub-api
+    public-paths: []
+  internal:
+    # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
+    clients: []

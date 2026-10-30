@@ -1,0 +1,16 @@
+# Dev-override: публикует порты бизнес-сервисов на 127.0.0.1 для отладки и Swagger UI.
+# Запуск: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Эти адреса служебные и не являются публичным URL приложения (им станет UI через Nginx).
+services:
+  auth-service:
+    ports: ["127.0.0.1:8081:8080"]
+  schedule-service:
+    ports: ["127.0.0.1:8082:8080"]
+  membership-service:
+    ports: ["127.0.0.1:8083:8080"]
+  booking-service:
+    ports: ["127.0.0.1:8084:8080"]
+  payment-service:
+    ports: ["127.0.0.1:8085:8080"]
+  notification-service:
+    ports: ["127.0.0.1:8086:8080"]

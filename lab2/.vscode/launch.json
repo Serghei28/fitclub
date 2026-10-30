@@ -1,0 +1,15 @@
+{
+  // Запуск сервисов из VS Code (Extension Pack for Java) при инфраструктуре в Docker.
+  // cwd = корень lab2, поэтому сервис находит каталог secrets/ (профиль local по умолчанию).
+  // Если тот же сервис запущен в Docker с docker-compose.dev.yml, сначала остановите контейнер:
+  //   docker compose stop auth-service
+  "version": "0.2.0",
+  "configurations": [
+    { "type": "java", "request": "launch", "name": "auth-service (8081)", "mainClass": "com.fitclub.auth.AuthServiceApplication", "projectName": "auth-service", "cwd": "${workspaceFolder}" },
+    { "type": "java", "request": "launch", "name": "schedule-service (8082)", "mainClass": "com.fitclub.schedule.ScheduleServiceApplication", "projectName": "schedule-service", "cwd": "${workspaceFolder}" },
+    { "type": "java", "request": "launch", "name": "membership-service (8083)", "mainClass": "com.fitclub.membership.MembershipServiceApplication", "projectName": "membership-service", "cwd": "${workspaceFolder}" },
+    { "type": "java", "request": "launch", "name": "booking-service (8084)", "mainClass": "com.fitclub.booking.BookingServiceApplication", "projectName": "booking-service", "cwd": "${workspaceFolder}" },
+    { "type": "java", "request": "launch", "name": "payment-service (8085)", "mainClass": "com.fitclub.payment.PaymentServiceApplication", "projectName": "payment-service", "cwd": "${workspaceFolder}" },
+    { "type": "java", "request": "launch", "name": "notification-service (8086)", "mainClass": "com.fitclub.notification.NotificationServiceApplication", "projectName": "notification-service", "cwd": "${workspaceFolder}" }
+  ]
+}

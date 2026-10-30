@@ -1,5 +1,6 @@
 # Локальные секреты и конфигурация: никогда не попадают в Git
-secrets/
+# (/ в начале: только lab2/secrets, а не infrastructure/secrets с генератором)
+/secrets/
 .env
 *.pem
 *.key

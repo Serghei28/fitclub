@@ -1,0 +1,3 @@
+# Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
+db_auth_password: not-used-with-testcontainers
+service_token_schedule_to_auth: test-service-token-schedule-to-auth-0123456789abcdef
