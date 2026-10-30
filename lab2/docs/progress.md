@@ -20,24 +20,23 @@
 
 ## Текущее состояние
 
-**Шаг 3 выполнен** (30.10.2026). auth-service реализован полностью.
+**Шаг 4 выполнен** (30.10.2026). Работает API Gateway.
 
 Что появилось:
-- `domain`: `User`, `Email` (нормализация), `PasswordPolicy` (8 символов, ≤ 72 байт UTF-8), `RefreshToken` (ротация, цепочка), `Role`, `AuthErrors` — без Spring/JPA;
-- `application`: `RegisterUserUseCase`, `LoginUseCase`, `RefreshSessionUseCase`, `LogoutUseCase`, `ChangeUserRolesUseCase`, `UserQueryService`, `EnsureInitialAdminUseCase`, `SessionIssuer`; порты `UserRepository`, `RefreshTokenRepository`, `PasswordHasher`, `AccessTokenIssuer`;
-- `infrastructure`: JPA-адаптеры, `SpringPasswordHasher` (BCrypt), `JwtAccessTokenIssuer` (RS256, проверка соответствия ключей), `AuthProperties`, `InitialAdminBootstrap`;
-- `api`: `AuthController`, `AdminUserController`, `InternalUserController` с OpenAPI-описаниями;
-- `fitclub-common`: `DomainException`, `PageResponse`, `Clock`, `ProblemErrorController` (problem+json для `/error`);
-- секрет `auth_initial_admin_password`; в Compose закрытый ключ JWT монтируется только в auth-service;
-- [docs/security.md](security.md).
+- модуль `gateway` (Spring Cloud Gateway Server WebFlux 5.0.4): `GatewayRoutes` (маршруты с явным порядком, `/internal/**` не публикуется), `GatewaySecurityConfiguration` (реактивная проверка JWT RS256), `RequestIdFilter` (X-Request-ID, JSON-лог с `route`, `duration_ms`), `PathGuardFilter` (`/internal` → 404, `..`/`//`/`;` → 400), `StripInternalHeadersFilter` (удаляет `X-Service-Token`), `GatewayErrorHandler` (503/504/502/404 в problem+json), общий Swagger UI для шести сервисов;
+- Dockerfile и сервис `gateway` в Compose (`127.0.0.1:8000`), healthcheck по `/ready`;
+- в сервисах `server.forward-headers-strategy=framework`: OpenAPI через Gateway указывает на адрес Gateway.
 
 Проверки:
-- `mvnw verify` — **BUILD SUCCESS** по всем модулям:
-  - auth-service: 15 unit-тестов use case'ов на fake-адаптерах (без Spring и БД), 4 доменных, 2 теста выпуска JWT (токен принимается общим декодером, несоответствие ключей обнаруживается при старте), 4 ArchUnit, 21 интеграционный на PostgreSQL (`AuthApiIT`), 5 каркасных, 1 потеря БД;
-  - в `AuthApiIT`: роли из тела регистрации игнорируются, email без учёта регистра, **6 параллельных регистраций одного email → ровно 1 пользователь**, BCrypt в БД, одинаковая ошибка для неверного пароля и неизвестного email, ротация и отзыв цепочки при повторном использовании, logout (access живёт до exp), refresh хранится только хешем, ADMIN API (403 для клиента, фильтр роли, лимит size, назначение TRAINER попадает в следующий токен, запрет снять ADMIN с себя), внутренний trainer-status (401 без токена, 404 для неизвестного);
-  - `fitclub-common`: 28 тестов, включая problem+json для `/error`;
-- Docker: первый ADMIN создан при запуске (`Initial admin bootstrap: CREATED`), регистрация с кириллицей, назначение TRAINER, `trainer-status` с токеном schedule → 200, с чужим токеном → 401; путь с `//` → 400 problem+json; токен auth принят booking-service без обращения к Auth; в логах нет паролей и токенов.
+- `mvnw verify` — **BUILD SUCCESS**, всего 142 теста. Gateway: 15 интеграционных тестов с настоящим Gateway и WireMock-сервисами и 2 ArchUnit:
+  - маршрутизация (участники занятия → booking, занятие → schedule), проброс токена, `X-Service-Token` удаляется, ошибки сервиса проходят без изменений, OpenAPI с `X-Forwarded-Host`;
+  - 401 без токена и с поддельным или истёкшим токеном (до сервиса не доходит), `/internal/**` → 404, `..`/`%2e%2e`/`;` → 400;
+  - `X-Request-ID` передаётся сервису и возвращается, недопустимый заменяется;
+  - остановленный сервис → 503 `DEPENDENCY_UNAVAILABLE`, медленный → 504 `DEPENDENCY_TIMEOUT` за ~1 с, `/health` и `/ready` Gateway не зависят от сервисов;
+- Docker: семь приложений `healthy`; вход ADMIN, `/api/auth/me` и `/api/admin/users` через Gateway; один `request_id` в логах Gateway и auth-service; `/internal/...` → 404; `--path-as-is /api/auth/../../internal/...` → 400; `docker compose stop notification-service` → `503 DEPENDENCY_UNAVAILABLE`; Swagger UI Gateway 200, `servers` = `http://localhost:8000`.
+
+Найдено и исправлено: Gateway 5 не передаёт `X-Forwarded-*` без `trusted-proxies`, из-за этого OpenAPI через Gateway показывал внутренний адрес `http://auth-service:8080`.
 
 ## Ближайшая задача
 
-Шаг 4: API Gateway — маршруты всех сервисов, проверка JWT на защищённых маршрутах, удаление служебных заголовков, закрытие `/internal/**`, передача `X-Request-ID`, контролируемый ответ при недоступном backend.
+Шаг 5: schedule-service — типы тренировок, занятия DRAFT → PUBLISHED → CANCELLED, проверка тренера через внутренний API Auth (HTTP-клиент с таймаутами и X-Request-ID), outbox `SessionPublished`/`SessionCancelled` и outbox publisher в RabbitMQ.

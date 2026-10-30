@@ -1,0 +1,13 @@
+# Профиль docker: сервисы по именам контейнеров в сети Compose, секреты в /run/secrets.
+server:
+  port: 8080
+
+fitclub:
+  gateway:
+    services:
+      auth: ${FITCLUB_AUTH_URL:http://auth-service:8080}
+      schedule: ${FITCLUB_SCHEDULE_URL:http://schedule-service:8080}
+      membership: ${FITCLUB_MEMBERSHIP_URL:http://membership-service:8080}
+      booking: ${FITCLUB_BOOKING_URL:http://booking-service:8080}
+      payment: ${FITCLUB_PAYMENT_URL:http://payment-service:8080}
+      notification: ${FITCLUB_NOTIFICATION_URL:http://notification-service:8080}

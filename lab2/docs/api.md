@@ -4,7 +4,7 @@
 
 ## OpenAPI и Swagger UI
 
-У каждого сервиса свои `GET /v3/api-docs` (JSON) и `/swagger-ui.html`. В dev-режиме (`docker-compose.dev.yml`) это порты 8081–8086, таблица адресов есть в README. Схемы безопасности: `bearerAuth` (JWT) для `/api/**` и `serviceToken` (`X-Service-Token`) для `/internal/**`. Доступ к документации через Gateway и UI появится на шагах 4 и 10. Документация включена в режимах local/docker/demo; для production её отключают свойством `springdoc.api-docs.enabled=false`.
+У каждого сервиса свои `GET /v3/api-docs` (JSON) и `/swagger-ui.html`. В dev-режиме (`docker-compose.dev.yml`) это порты 8081–8086, таблица адресов есть в README. Схемы безопасности: `bearerAuth` (JWT) для `/api/**` и `serviceToken` (`X-Service-Token`) для `/internal/**`. Через Gateway все шесть документов доступны в одном Swagger UI: http://localhost:8000/swagger-ui.html. Запросы «Try it out» оттуда идут через Gateway. Документация включена в режимах local/docker/demo; для production её отключают свойством `springdoc.api-docs.enabled=false`.
 
 ## Общие правила
 
@@ -15,6 +15,45 @@
 - Имена полей JSON — `snake_case`.
 - `X-Request-ID`: принимается, если соответствует `^[A-Za-z0-9-]{8,64}$`, иначе генерируется новый. Всегда возвращается в ответе.
 - `Idempotency-Key` (UUID) обязателен для `POST /api/membership-orders`, `POST /api/payments`, `POST /api/payments/{id}/simulate`, `POST /api/bookings`.
+
+## API Gateway (шаг 4)
+
+Единая точка входа: `http://localhost:8000` (в Compose порт задаётся переменной `GATEWAY_HOST_PORT`). Общий Swagger UI со всеми сервисами: http://localhost:8000/swagger-ui.html, сервис выбирается в выпадающем списке.
+
+| Порядок | Маршрут | Сервис |
+|---|---|---|
+| 0 | `/api/sessions/{id}/bookings` | booking-service (участники занятия) |
+| 10 | `/api/auth/**`, `/api/admin/users/**` | auth-service |
+| 20 | `/api/training-types/**`, `/api/sessions`, `/api/sessions/**` | schedule-service |
+| 20 | `/api/plans/**`, `/api/membership-orders/**`, `/api/memberships/**` | membership-service |
+| 20 | `/api/payments/**` | payment-service |
+| 20 | `/api/bookings/**`, `/api/availability` | booking-service |
+| 20 | `/api/notifications/**` | notification-service |
+| 30 | `/docs/{service}/v3/api-docs` → `/v3/api-docs` сервиса | OpenAPI для общего Swagger UI |
+| — | `/internal/**` | **не публикуется**, ответ `404` без обращения к сервисам |
+
+Пути не переписываются: сервис получает тот же `/api/...`. Маршрут участников занятия стоит раньше общего `/api/sessions/**`, это проверяет тест `participantsOfSessionGoToBookingButSessionGoesToSchedule`.
+
+Что делает Gateway:
+- проверяет JWT (RS256, `iss`, `aud`, `exp`, `sub`) на всех `/api/**`, кроме `POST /api/auth/register|login|refresh|logout`. Недействительный токен отсекается здесь, но роли и владение ресурсами проверяет сам сервис;
+- удаляет из входящих запросов `X-Service-Token`;
+- отклоняет пути с `..`, `//`, `;`, `\` и их URL-кодированными формами (`400`);
+- принимает или создаёт `X-Request-ID`, передаёт его сервису и возвращает клиенту;
+- передаёт сервисам `X-Forwarded-Host/Proto/Port`. Gateway доверяет только loopback и частным сетям (`trusted-proxies`).
+
+Чего Gateway не делает: не активирует абонементы, не считает лимиты, не хранит данные. Проверяет `GatewayArchitectureTest`.
+
+### Ошибки зависимостей
+
+| Ситуация | Ответ | Где формируется |
+|---|---|---|
+| Сервис не принимает соединение, остановлен или имя не резолвится | `503 DEPENDENCY_UNAVAILABLE` | Gateway |
+| Сервис не ответил за `response-timeout` (10 с, `FITCLUB_GATEWAY_RESPONSE_TIMEOUT`) | `504 DEPENDENCY_TIMEOUT` | Gateway |
+| Соединение оборвано во время ответа | `502 DEPENDENCY_BAD_RESPONSE` | Gateway |
+| Сервис ответил ошибкой (4xx/5xx problem+json) | **без изменений** | сервис |
+| Нет маршрута | `404 RESOURCE_NOT_FOUND` | Gateway |
+
+Таймаут соединения — 2 с (`FITCLUB_GATEWAY_CONNECT_TIMEOUT_MS`). Gateway не повторяет запросы сам: произвольный POST вслепую не повторяется. Адреса сервисов в тело ответа не попадают.
 
 ## Публичные маршруты
 

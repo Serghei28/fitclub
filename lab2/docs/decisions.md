@@ -67,6 +67,11 @@
 | D26 | Первый ADMIN создаётся `EnsureInitialAdminUseCase` при запуске из email и секрета `auth_initial_admin_password`, идемпотентно | Без этого администрировать систему некому. Пароль не хранится в репозитории и не печатается |
 | D27 | `ProblemErrorController` заменяет `BasicErrorController`: `/error` тоже отвечает problem+json, `request_id` берётся из атрибута запроса | Единый формат даже для ошибок до контроллеров (файрвол Spring Security, `sendError`) |
 | D28 | Тип колонок `CHAR(n)` явно указан в JPA (`@JdbcTypeCode(SqlTypes.CHAR)`) | `ddl-auto=validate` нашёл расхождение CHAR и VARCHAR при первом запуске. Схема остаётся источником истины |
+| D29 | Gateway на Spring Cloud Gateway Server WebFlux 5.0.4. Маршруты описаны в Java (`RouteLocator`) с явным `order` | Порядок `/api/sessions/{id}/bookings` и `/api/sessions/**` виден в коде и проверяется тестом. Адреса сервисов задаются типизированными свойствами |
+| D30 | Gateway проверяет JWT своим реактивным декодером с теми же правилами. Servlet-модуль `fitclub-common` не подключается | Реактивный и servlet-стеки несовместимы. Дублирование небольшое: валидаторы и формат problem+json |
+| D31 | Readiness Gateway не зависит от сервисов | Нет цикла готовности. Недоступный сервис даёт контролируемый 503 только на своих маршрутах |
+| D32 | Gateway без автоповторов, таймауты: соединение 2 с, ответ 10 с | Повтор произвольного POST небезопасен. Повторы с доказанной идемпотентностью делают HTTP-клиенты сервисов |
+| D33 | `trusted-proxies` — loopback и частные сети, `x-forwarded.prefix-enabled=false`, в сервисах `server.forward-headers-strategy=framework` | OpenAPI сервисов через Gateway указывает на адрес Gateway, и «Try it out» работает. Внешний клиент не подменит адрес |
 
 ## Допущения
 

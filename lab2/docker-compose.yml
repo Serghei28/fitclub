@@ -1,6 +1,6 @@
 # FitClub: локальное окружение.
-# Шаг 2: инфраструктура (PostgreSQL + bootstrap БД, RabbitMQ с топологией) и шесть бизнес-сервисов.
-# Gateway и UI добавляются следующими шагами (docs/progress.md). Порты сервисов публикуются только
+# Инфраструктура (PostgreSQL + bootstrap БД, RabbitMQ с топологией), шесть бизнес-сервисов и API Gateway
+# (http://localhost:8000). UI добавляется на шаге 10 (docs/progress.md). Порты сервисов публикуются только
 # dev-override: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # Перед первым запуском сгенерируйте секреты (см. README, раздел «Первый запуск»).
@@ -239,6 +239,30 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
+    restart: unless-stopped
+
+  # --- API Gateway: единая точка входа /api и общий Swagger UI ---
+  # Не ждёт готовности сервисов (нет цикла readiness): недоступный сервис даёт контролируемый 503.
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    image: fitclub/gateway:1.0.0
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      FITCLUB_SECRETS_DIR: /run/secrets
+    secrets:
+      - source: jwt_public_key
+        target: jwt_public_key.pem
+    ports:
+      # API и Swagger UI: http://localhost:8000/swagger-ui.html
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8000}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 3 из 11.** Готовы инфраструктура, общий технический модуль, каркасы шести сервисов и **полностью реализованный auth-service**: регистрация, вход, JWT RS256, refresh-токены с ротацией, роли и администрирование. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 4 из 11.** Готовы инфраструктура, общий технический модуль, каркасы шести сервисов, **auth-service** (регистрация, вход, JWT RS256, refresh-токены, роли) и **API Gateway** — единая точка входа `http://localhost:8000` с общим Swagger UI. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -31,7 +31,8 @@ lab2/
 │       ├── src/main/resources/application*.yml, db/migration/V1__*.sql
 │       └── src/test/...                ArchitectureTest, *ServiceSkeletonIT
 ├── infrastructure/                     bootstrap БД, топология RabbitMQ, генератор секретов
-├── gateway/, frontend/, tests/         появятся на шагах 4, 10, 11
+├── gateway/                            API Gateway (Spring Cloud Gateway, WebFlux)
+├── frontend/, tests/                   появятся на шагах 10, 11
 └── docs/
 ```
 
@@ -85,7 +86,17 @@ docker compose ps
 
 Без `docker-compose.dev.yml` сервисы тоже запускаются, но их порты не публикуются: в итоговой схеме внешний вход — только UI и Gateway.
 
-## Адреса (dev-режим)
+## Адреса
+
+**Основной вход — API Gateway:**
+
+| Что | Адрес |
+|---|---|
+| API | http://localhost:8000/api/... |
+| Общий Swagger UI (все шесть сервисов, выбор в списке справа сверху) | http://localhost:8000/swagger-ui.html |
+| Health / Ready Gateway | http://localhost:8000/health, http://localhost:8000/ready |
+
+**Служебные адреса сервисов (dev-режим):**
 
 | Сервис | Health / Ready | Swagger UI | OpenAPI JSON |
 |---|---|---|---|
@@ -117,7 +128,7 @@ Get-Content secrets\auth_initial_admin_password
 
 ## Проверка шага 3 (auth-service)
 
-Удобнее всего в Swagger UI: http://localhost:8081/swagger-ui.html.
+Удобнее всего в общем Swagger UI Gateway: http://localhost:8000/swagger-ui.html (в списке справа сверху выберите `auth-service`).
 
 1. `POST /api/auth/register` — зарегистрируйте пользователя (роль будет `CLIENT`, даже если добавить в тело `"roles":["ADMIN"]`).
 2. `POST /api/auth/login` под `admin@fitclub.local` → скопируйте `access_token` → кнопка **Authorize** → вставьте токен.
@@ -226,6 +237,48 @@ Bash:
    ```
 
 Адрес БД любого сервиса меняется без правки кода, переменной `FITCLUB_DB_URL`, например `jdbc:postgresql://other-host:5432/auth_db`.
+
+## Проверка шага 4 (API Gateway)
+
+Запрос без токена отклоняет сам Gateway: `401` problem+json.
+
+```bash
+curl -i http://localhost:8000/api/plans
+```
+
+Внутренние маршруты снаружи не существуют: `404`.
+
+```bash
+curl -i http://localhost:8000/internal/users/1/trainer-status
+```
+
+Попытка обойти это через `..`: `400`.
+
+```bash
+curl -i --path-as-is "http://localhost:8000/api/auth/../../internal/users/1/trainer-status"
+```
+
+Недоступный сервис даёт контролируемый `503 DEPENDENCY_UNAVAILABLE`, а не зависание. Остановите сервис, выполните любой запрос к `/api/notifications` с токеном (например, через Swagger UI) и запустите сервис обратно:
+
+```bash
+docker compose stop notification-service
+```
+
+```bash
+docker compose start notification-service
+```
+
+Один `request_id` виден в логах Gateway и сервиса:
+
+```bash
+curl -s http://localhost:8000/api/plans -H "X-Request-ID: my-trace-000001"
+```
+
+```bash
+docker compose logs gateway auth-service membership-service | findstr my-trace-000001
+```
+
+В Bash вместо `findstr` используйте `grep`.
 
 ## Логи, остановка, пересборка одного сервиса
 

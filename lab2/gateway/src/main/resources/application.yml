@@ -1,0 +1,97 @@
+# FitClub API Gateway
+# Профили: local (по умолчанию, сервисы на localhost:8081–8086), docker (имена контейнеров), test (автотесты).
+spring:
+  application:
+    name: gateway
+  profiles:
+    default: local
+  main:
+    banner-mode: off
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            # Отдельные таймауты: соединение с сервисом и ожидание ответа
+            connect-timeout: ${FITCLUB_GATEWAY_CONNECT_TIMEOUT_MS:2000}
+            response-timeout: ${FITCLUB_GATEWAY_RESPONSE_TIMEOUT:10s}
+          x-forwarded:
+            # Пути не переписываются, поэтому префикс не нужен: Swagger сервисов строит URL от адреса Gateway
+            prefix-enabled: false
+          # Без этого Gateway 5 не передаёт Forwarded/X-Forwarded-* сервисам. Доверяем только loopback и частным
+          # сетям (Docker, будущий Nginx UI): клиент из внешней сети не сможет подменить адрес через эти заголовки.
+          trusted-proxies: '127\.0\.0\.1|0:0:0:0:0:0:0:1|::1|10\..*|172\.(1[6-9]|2[0-9]|3[01])\..*|192\.168\..*'
+
+server:
+  port: ${PORT:8000}
+
+fitclub:
+  gateway:
+    services:
+      auth: ${FITCLUB_AUTH_URL:http://localhost:8081}
+      schedule: ${FITCLUB_SCHEDULE_URL:http://localhost:8082}
+      membership: ${FITCLUB_MEMBERSHIP_URL:http://localhost:8083}
+      booking: ${FITCLUB_BOOKING_URL:http://localhost:8084}
+      payment: ${FITCLUB_PAYMENT_URL:http://localhost:8085}
+      notification: ${FITCLUB_NOTIFICATION_URL:http://localhost:8086}
+    jwt:
+      public-key: file:${FITCLUB_SECRETS_DIR:secrets}/jwt_public_key.pem
+      issuer: fitclub-auth
+      audience: fitclub-api
+
+# JSON-логи: timestamp, service, level, request_id, message (+ route, duration_ms, http_status)
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      rename:
+        "[@timestamp]": timestamp
+      add:
+        service: ${spring.application.name}
+      exclude: "@version,level_value"
+
+# /health — liveness процесса; /ready — готовность самого Gateway.
+# Состояние сервисов в readiness Gateway намеренно НЕ входит: иначе Gateway не стартовал бы без всех соседей,
+# а недоступный сервис и так даёт контролируемый 503 на своих маршрутах.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      show-components: always
+      group:
+        liveness:
+          include: livenessState
+          additional-path: "server:/health"
+        readiness:
+          include: readinessState
+          additional-path: "server:/ready"
+
+# Единый Swagger UI: OpenAPI каждого сервиса забирается через маршруты /docs/{service}/v3/api-docs
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: auth-service
+        url: /docs/auth/v3/api-docs
+      - name: schedule-service
+        url: /docs/schedule/v3/api-docs
+      - name: membership-service
+        url: /docs/membership/v3/api-docs
+      - name: booking-service
+        url: /docs/booking/v3/api-docs
+      - name: payment-service
+        url: /docs/payment/v3/api-docs
+      - name: notification-service
+        url: /docs/notification/v3/api-docs

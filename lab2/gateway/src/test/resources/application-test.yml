@@ -1,0 +1,9 @@
+# Профиль test: короткий таймаут ответа, чтобы проверить 504 без долгого ожидания.
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 1000
+            response-timeout: 1s

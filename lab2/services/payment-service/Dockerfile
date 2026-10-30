@@ -8,6 +8,7 @@ COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 COPY libs/ libs/
 COPY services/ services/
+COPY gateway/ gateway/
 # Кэш ~/.m2 переживает пересборку: зависимости не скачиваются заново
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
     sh ./mvnw -B -q -pl services/payment-service -am package -DskipTests
