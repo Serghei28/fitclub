@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 5 из 11.** Готовы инфраструктура, общие модули, **auth-service**, **API Gateway** (`http://localhost:8000`, общий Swagger UI) и **schedule-service** с событиями через transactional outbox и RabbitMQ. Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 6 из 11.** Готовы инфраструктура, общие модули, **auth-service**, **API Gateway** (`http://localhost:8000`, общий Swagger UI), **schedule-service** с событиями через transactional outbox и **membership-service** (тарифы, заказы с `Idempotency-Key`, право на посещение). Остальные бизнес-API появляются со следующими шагами, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -308,6 +308,21 @@ curl http://localhost:8082/actuator/health/messaging
 ```
 
 Если остановить брокер (`docker compose stop rabbitmq`), публикация занятия всё равно пройдёт: событие сохранится в outbox. `/ready` останется `200`, а `messaging` станет `DOWN`. После `docker compose start rabbitmq` событие будет отправлено.
+
+## Проверка шага 6 (membership-service)
+
+В общем Swagger UI выберите `membership-service`:
+
+1. Под ADMIN: `POST /api/plans` с `{"name":"8 посещений в месяц","duration_days":30,"visit_limit":8,"price_minor":45000}` и безлимитный тариф без `visit_limit`.
+2. Под клиентом: `POST /api/membership-orders` с `{"plan_id":"…"}` и заголовком `Idempotency-Key`. Подойдёт любой UUID, например из https://www.uuidgenerator.net. Цена в ответе — из тарифа, даже если добавить в тело `"price_minor":1`.
+3. Повторите запрос с тем же ключом: тот же `id` и заголовок `Idempotent-Replayed: true`. Тот же ключ с другим тарифом даёт `409 IDEMPOTENCY_CONFLICT`.
+4. Новый ключ, но другой тариф, пока первый заказ не оплачен: `409 PENDING_ORDER_EXISTS`. Оплата появится на шаге 7.
+
+Внутренний API доступен только с токеном своего направления. Через Gateway он закрыт:
+
+```powershell
+curl.exe -s http://localhost:8083/internal/membership-orders/<order_id>/payment-details -H "X-Service-Token: $(Get-Content secrets\service_token_payment_to_membership)"
+```
 
 ## Логи, остановка, пересборка одного сервиса
 

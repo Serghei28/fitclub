@@ -186,6 +186,74 @@ POST /api/sessions
 
 Таймауты задаются в конфигурации каждого клиента (`fitclub.schedule.auth.*`: connect 1 с, read 2 с, 2 попытки, пауза 200 мс). Повторяются только безопасные GET. Сетевой вызов выполняется до открытия транзакции.
 
+### Membership: реализовано (шаг 6)
+
+Тарифы (`POST /api/plans`, ADMIN). Для безлимита `visit_limit` не передаётся, в ответах он всегда есть и равен `null`:
+
+```json
+{"id": "634e…", "name": "8 посещений в месяц", "duration_days": 30, "visit_limit": 8, "unlimited": false,
+ "price_minor": 45000, "currency": "MDL", "active": true}
+```
+
+Заказ абонемента — клиент передаёт **только** `plan_id`, остальное берётся из тарифа на сервере:
+
+```http
+POST /api/membership-orders
+Idempotency-Key: 6f1c2b8e-1d7a-4b55-9c0e-2a4f3a1c9b10
+
+{"plan_id": "634e…"}
+```
+
+```json
+{"id": "57b6…", "plan_id": "634e…", "plan_name": "8 посещений в месяц", "duration_days": 30, "visit_limit": 8,
+ "unlimited": false, "price_minor": 45000, "currency": "MDL", "status": "AWAITING_PAYMENT", "created_at": "…"}
+```
+
+| Ситуация | Ответ |
+|---|---|
+| Новый заказ | `201` |
+| Уже есть ожидающий заказ **того же** тарифа (обновление страницы) | `200` с этим же заказом |
+| Повтор с тем же `Idempotency-Key` и тем же телом | исходный ответ (`201` или `200`) + заголовок `Idempotent-Replayed: true` |
+| Тот же `Idempotency-Key` с другим телом | `409 IDEMPOTENCY_CONFLICT` |
+| Ожидающий заказ **другого** тарифа | `409 PENDING_ORDER_EXISTS` |
+| Есть не закончившийся абонемент | `409 ACTIVE_MEMBERSHIP_EXISTS` |
+| Тариф снят с продажи или не существует | `409 PLAN_NOT_AVAILABLE` |
+| Нет заголовка `Idempotency-Key` | `400 MALFORMED_REQUEST` |
+| Чужой заказ (`GET /api/membership-orders/{id}`) | `404` (ADMIN видит любой) |
+
+`GET /api/memberships/me` возвращает абонементы со статусом `UPCOMING` / `ACTIVE` / `EXPIRED`, вычисленным по времени (интервал `[starts_at, ends_at)`). Абонементы появляются после подтверждённой оплаты (шаг 7).
+
+Внутренние маршруты:
+
+```http
+GET /internal/membership-orders/57b6…/payment-details        (X-Service-Token: payment → membership)
+```
+
+```json
+{"order_id": "57b6…", "user_id": "e957…", "status": "AWAITING_PAYMENT", "amount_minor": 45000, "currency": "MDL",
+ "plan_name": "8 посещений в месяц"}
+```
+
+```http
+GET /internal/memberships/eligibility?user_id=e957…&at=2026-12-01T07:00:00Z   (X-Service-Token: booking → membership)
+```
+
+```json
+{"user_id": "e957…", "at": "2026-12-01T07:00:00Z", "eligible": true, "membership_id": "a1b2…",
+ "starts_at": "2026-11-01T10:00:00Z", "ends_at": "2026-12-01T10:00:00Z", "visit_limit": 8}
+```
+
+Если права нет: `{"eligible": false, "reason": "NO_VALID_MEMBERSHIP", …}`. Учёт использованных посещений ведёт Booking, а не Membership.
+
+### Idempotency-Key: как устроено
+
+`IdempotencyStore` (`fitclub-common`) работает в транзакции бизнес-операции:
+1. `pg_advisory_xact_lock` по (владелец, операция, ключ): одновременные повторы ждут друг друга;
+2. запись найдена и хеш тела совпадает — возвращается сохранённый ответ, действие не выполняется. Хеш не совпадает — `409 IDEMPOTENCY_CONFLICT`;
+3. записи нет — выполняется действие, ответ сохраняется в `idempotency_records` в той же транзакции.
+
+Хеш — SHA-256 канонического JSON тела (поля по алфавиту). Ключ действует только в пределах (пользователь, операция). Ошибка действия откатывает транзакцию, и ключ не сохраняется. Новое намерение пользователя требует нового ключа.
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)
