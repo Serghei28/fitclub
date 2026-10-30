@@ -1,0 +1,8 @@
+# Скрипты, которые выполняются внутри Linux-контейнеров, обязаны иметь LF даже при checkout на Windows
+* text=auto
+*.sh text eol=lf
+mvnw text eol=lf
+*.conf text eol=lf
+*.sql text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

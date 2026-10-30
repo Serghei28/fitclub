@@ -1,0 +1,21 @@
+# Локальные секреты и конфигурация: никогда не попадают в Git
+secrets/
+.env
+*.pem
+*.key
+
+# Сборка
+target/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+
+# Прочее
+*.log
+.DS_Store
+Thumbs.db

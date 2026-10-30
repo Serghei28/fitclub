@@ -1,0 +1,174 @@
+{
+  "vhosts": [
+    {
+      "name": "fitclub"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "fitclub.events",
+      "vhost": "fitclub",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "fitclub.dlx",
+      "vhost": "fitclub",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "booking-service.events",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "fitclub.dlx",
+        "x-dead-letter-routing-key": "booking-service.events.dlq"
+      }
+    },
+    {
+      "name": "booking-service.events.dlq",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "membership-service.events",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "fitclub.dlx",
+        "x-dead-letter-routing-key": "membership-service.events.dlq"
+      }
+    },
+    {
+      "name": "membership-service.events.dlq",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "notification-service.events",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "fitclub.dlx",
+        "x-dead-letter-routing-key": "notification-service.events.dlq"
+      }
+    },
+    {
+      "name": "notification-service.events.dlq",
+      "vhost": "fitclub",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "booking-service.events",
+      "destination_type": "queue",
+      "routing_key": "schedule.session.published",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "booking-service.events",
+      "destination_type": "queue",
+      "routing_key": "schedule.session.cancelled",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.dlx",
+      "vhost": "fitclub",
+      "destination": "booking-service.events.dlq",
+      "destination_type": "queue",
+      "routing_key": "booking-service.events.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "membership-service.events",
+      "destination_type": "queue",
+      "routing_key": "payment.payment.succeeded",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "membership-service.events",
+      "destination_type": "queue",
+      "routing_key": "payment.payment.declined",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.dlx",
+      "vhost": "fitclub",
+      "destination": "membership-service.events.dlq",
+      "destination_type": "queue",
+      "routing_key": "membership-service.events.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "notification-service.events",
+      "destination_type": "queue",
+      "routing_key": "membership.membership.activated",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "notification-service.events",
+      "destination_type": "queue",
+      "routing_key": "booking.booking.confirmed",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.events",
+      "vhost": "fitclub",
+      "destination": "notification-service.events",
+      "destination_type": "queue",
+      "routing_key": "booking.booking.cancelled",
+      "arguments": {}
+    },
+    {
+      "source": "fitclub.dlx",
+      "vhost": "fitclub",
+      "destination": "notification-service.events.dlq",
+      "destination_type": "queue",
+      "routing_key": "notification-service.events.dlq",
+      "arguments": {}
+    }
+  ]
+}

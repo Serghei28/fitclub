@@ -1,0 +1,103 @@
+# FitClub: локальное окружение.
+# Этап 1: только инфраструктура (PostgreSQL + bootstrap БД, RabbitMQ с топологией).
+# Бизнес-сервисы, Gateway и UI добавляются следующими этапами (docs/progress.md).
+#
+# Перед первым запуском сгенерируйте секреты (см. README, раздел «Первый запуск»).
+# Остановка без потери данных: docker compose down   (НЕ используйте -v: он удаляет volumes)
+
+name: fitclub
+
+x-postgres-image: &postgres-image postgres:17.11-alpine
+
+services:
+  postgres:
+    image: *postgres-image
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8"
+      TZ: UTC
+    secrets:
+      - postgres_admin_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Порт открыт только для локальной машины: нужен для запуска сервисов из IDE и для psql
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Одноразовый идемпотентный bootstrap: роли и логические БД сервисов.
+  # Выполняется при каждом `up` и завершается; сервисы ждут его успешного завершения.
+  postgres-bootstrap:
+    image: *postgres-image
+    entrypoint: ["sh", "/bootstrap/bootstrap-databases.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+    secrets:
+      - postgres_admin_password
+      - db_auth_password
+      - db_schedule_password
+      - db_membership_password
+      - db_booking_password
+      - db_payment_password
+      - db_notification_password
+    volumes:
+      - ./infrastructure/postgres:/bootstrap:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  rabbitmq:
+    image: rabbitmq:4.1.8-management-alpine
+    # Постоянное имя узла: данные RabbitMQ в volume привязаны к имени хоста
+    hostname: rabbitmq
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-fitclub.conf:ro
+      - ./infrastructure/rabbitmq/topology.json:/etc/rabbitmq/definitions.d/10-topology.json:ro
+    secrets:
+      # Через secrets, а не bind mount: при отсутствии файла Compose сообщит об ошибке,
+      # а не создаст вместо него пустой каталог
+      - source: rabbitmq_users
+        target: /etc/rabbitmq/definitions.d/00-users.json
+    ports:
+      - "127.0.0.1:${RABBITMQ_HOST_PORT:-5672}:5672"
+      # Management UI: http://localhost:15672, пользователь fitclub_admin
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_HOST_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+
+secrets:
+  postgres_admin_password:
+    file: ./secrets/postgres_admin_password
+  db_auth_password:
+    file: ./secrets/db_auth_password
+  db_schedule_password:
+    file: ./secrets/db_schedule_password
+  db_membership_password:
+    file: ./secrets/db_membership_password
+  db_booking_password:
+    file: ./secrets/db_booking_password
+  db_payment_password:
+    file: ./secrets/db_payment_password
+  db_notification_password:
+    file: ./secrets/db_notification_password
+  rabbitmq_users:
+    file: ./secrets/rabbitmq_users.json
