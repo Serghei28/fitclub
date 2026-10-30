@@ -1,6 +1,6 @@
 # События: контракты v1
 
-> Статус: топология — шаг 1, издатели (outbox) — шаг 5, потребители, повторы и DLQ — шаг 7, **booking — шаг 8** (потребляет события занятий, публикует события бронирований). Notification подключается на шаге 9.
+> Статус: **все издатели и потребители реализованы** (шаги 5–9). Публикуют schedule, payment, membership и booking. Потребляют membership, booking и notification.
 
 ## Конверт события
 
@@ -140,7 +140,17 @@ sequenceDiagram
 | `SessionPublished` | Создать `session_inventory` (снимок, `capacity`, `booked_count = 0`, `OPEN`) | Версия не больше применённой или занятие уже `CANCELLED` → игнорируется |
 | `SessionCancelled` | `CANCELLED`, отменить все `CONFIRMED`-брони с возвратом места и посещения, по каждой — `BookingCancelled` | Уже отменено или версия меньше → игнорируется. Пришло раньше публикации → «надгробие» |
 
-`BookingConfirmed` (`aggregate_version = 1`) и `BookingCancelled` (`aggregate_version = 2`) публикуются через outbox вместе с изменением брони. Получатель — notification-service (шаг 9). Подробности сценариев — [flows.md](flows.md).
+`BookingConfirmed` (`aggregate_version = 1`) и `BookingCancelled` (`aggregate_version = 2`) публикуются через outbox вместе с изменением брони. Подробности сценариев — [flows.md](flows.md).
+
+### Обработка в notification-service
+
+| Событие | Действие | Защита от повторов и порядка |
+|---|---|---|
+| `MembershipActivated` | Уведомление «Абонемент активирован» | `dedup_key = MEMBERSHIP_ACTIVATED:<membership_id>` |
+| `BookingConfirmed` | Проекция брони `CONFIRMED`, уведомление, задача напоминания `remind_at = starts_at − REMINDER_LEAD_MINUTES` (или «сразу», если этот момент прошёл; для начавшегося занятия — без задачи) | Версия ≤ известной (в том числе после отмены) → игнорируется. Одна задача на бронь (`uq_reminder_jobs_booking`) |
+| `BookingCancelled` | Проекция `CANCELLED` («надгробие»), уведомление об отмене (пользователем или клубом), ожидающее напоминание → `CANCELLED` | Отмена раньше подтверждения: опоздавшее `BookingConfirmed` не создаёт ни уведомления, ни напоминания |
+
+Notification только потребляет события: outbox у него отключён (`fitclub.outbox.enabled=false`), в группе `messaging` только `rabbit`.
 
 ## Гарантии
 

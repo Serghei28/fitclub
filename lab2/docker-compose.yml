@@ -247,6 +247,8 @@ services:
       - db_notification_password
       - source: jwt_public_key
         target: jwt_public_key.pem
+      # Свой пользователь RabbitMQ: только чтение очереди notification-service.events
+      - rabbitmq_notification_password
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
@@ -319,6 +321,8 @@ secrets:
     file: ./secrets/rabbitmq_payment_password
   rabbitmq_booking_password:
     file: ./secrets/rabbitmq_booking_password
+  rabbitmq_notification_password:
+    file: ./secrets/rabbitmq_notification_password
   service_token_payment_to_membership:
     file: ./secrets/service_token_payment_to_membership
   service_token_booking_to_membership:

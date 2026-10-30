@@ -1,6 +1,6 @@
 # Сценарии: REST, события и согласованность
 
-> Статус: оплата и активация абонемента (шаг 7), запись, отмена и отмена занятия (шаг 8) реализованы и проверены. Уведомления и напоминания — шаг 9.
+> Статус: оплата и активация (шаг 7), запись и отмены (шаг 8), уведомления и напоминания (шаг 9) реализованы и проверены.
 
 ## Оплата и активация абонемента
 
@@ -142,3 +142,34 @@ Booking применяет событие занятия, только если 
 | `SessionPublished` ещё не доставлен | `409 SESSION_NOT_READY` («повторите через несколько секунд»), `GET /api/availability` → `state: NOT_READY` |
 | booking-service был остановлен | События занятий ждут в очереди `booking-service.events` (в Docker-проверке событие, опубликованное на шаге 5, обработано при первом запуске booking) |
 | Повтор `POST /api/bookings` со старым ключом после отмены | Тот же ответ `201` с тем же `id`, новой записи нет |
+
+## Уведомления и напоминания
+
+```mermaid
+sequenceDiagram
+    participant B as booking-service
+    participant MQ as RabbitMQ
+    participant N as notification-service
+    participant DB as notification_db
+    participant S as планировщик (каждые 15 с)
+    B--)MQ: BookingConfirmed (v1)
+    MQ--)N: notification-service.events
+    N->>DB: processed_events + booking_projection(v1) + notification + reminder_jobs(PENDING)
+    loop каждые 15 секунд
+        S->>DB: SELECT … WHERE status=PENDING AND remind_at<=now FOR UPDATE SKIP LOCKED
+        S->>DB: notification SESSION_REMINDER + status=SENT (одна транзакция)
+    end
+    B--)MQ: BookingCancelled (v2)
+    MQ--)N: …
+    N->>DB: projection CANCELLED(v2) + уведомление об отмене + reminder → CANCELLED
+```
+
+- **Доставка** через порт `NotificationChannel`. Реализация InApp сохраняет уведомление в `notifications` и отдаёт его через `GET /api/notifications`. Email или push можно добавить новым адаптером.
+- **Задачи напоминаний** хранятся в БД и переживают перезапуск: в Docker задача осталась `PENDING` после `docker compose restart notification-service`. Двойной отправки нет, потому что задачи берутся `FOR UPDATE SKIP LOCKED` и меняют статус в той же транзакции.
+- **Время.** Бизнес-логика получает `Clock` через конструктор, тесты переставляют часы и не ждут реального часа. В текстах время показывается в `Europe/Chisinau`.
+
+| Сбой | Поведение (проверено в Docker) |
+|---|---|
+| notification-service остановлен | Запись на занятие проходит: Booking от Notification не зависит. `GET /api/notifications` через Gateway → `503 DEPENDENCY_UNAVAILABLE`. Событие ждёт в очереди |
+| Notification снова запущен | Событие из очереди обработано, уведомление появилось (`unread` 3 → 4) |
+| Повторная доставка события | Тот же `event_id` → пропуск. Тот же факт с новым `event_id` → дубль подавлен по `dedup_key` |

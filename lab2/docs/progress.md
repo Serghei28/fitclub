@@ -14,30 +14,22 @@
 | 6 | membership-service | Тарифы, заказы со снимком, внутренние payment-details и eligibility, Idempotency-Key; тесты | ✅ готов и проверен |
 | 7 | payment-service и первый сквозной сценарий | `PaymentProvider`/`SimulatorPaymentProvider`, идемпотентность, outbox; потребитель в Membership (активация, `MembershipActivated`); retry/DLQ; тесты с RabbitMQ | ✅ готов и проверен |
 | 8 | booking-service | Проекция занятий, eligibility, блокировки, учёт лимита, отмена и граница окна, обработка `SessionCancelled`, `Idempotency-Key`; конкурентные тесты | ✅ готов и проверен |
-| 9 | notification-service | Уведомления, прочтение, сохраняемые напоминания, `NotificationChannel`, tombstone, `Clock`; тесты повторов и восстановления | ⏳ |
+| 9 | notification-service | Уведомления, прочтение, сохраняемые напоминания, `NotificationChannel`, tombstone, `Clock`; тесты повторов и восстановления | ✅ готов и проверен |
 | 10 | UI и финальный Compose | Статический UI на Nginx (все роли), dev-override, demo-профиль и seeding | ⏳ |
 | 11 | Сквозные проверки и документация для защиты | E2E через Gateway, сценарии сбоев, `solid.md`, `security.md`, `flows.md`, `testing.md`, `requirements-matrix.md`, `defense.md`, финальный README | ⏳ |
 
 ## Текущее состояние
 
-**Шаг 8 выполнен** (30.10.2026). Работает booking-service.
+**Шаг 9 выполнен** (30.10.2026). Все шесть бизнес-сервисов реализованы.
 
 Что появилось:
-- домен: `SessionInventory` (проекция с `aggregate_version` и «надгробием»), `Booking`, `MembershipUsage`, `BookingPolicy` (порядок проверок, окно отмены с включённой границей);
-- `CreateBookingUseCase` (повтор ключа → eligibility вне транзакции → блокировки занятие → учёт посещений → проверки → запись + outbox), `CancelBookingUseCase`, `SessionProjectionHandler` (`SessionPublished`/`SessionCancelled`, массовая отмена с возвратом), `BookingQueryService`;
-- адаптеры: JPA с `lockFresh` (refresh + `PESSIMISTIC_WRITE`), `INSERT … ON CONFLICT` для проекции и учёта, `MembershipEligibilityClient`, слушатель `booking-service.events`, outbox `BookingConfirmed`/`BookingCancelled`;
-- API: `/api/bookings`, `/api/bookings/{id}/cancel`, `/api/bookings/me`, `/api/bookings/usage/me`, `/api/availability`, `/api/sessions/{id}/bookings`;
-- миграция `V2__booking_user_display_name.sql`; `AuthenticatedUser.displayName`, `IdempotencyStore.lookup`, `TestJwt.name`.
+- notification-service: домен `Notification` (dedup_key, прочтение), `BookingState` (версия, «надгробие»), `ReminderJob` (правило планирования, SEND/SKIP), `NotificationTexts` (Europe/Chisinau); `NotificationEventHandler`, `ReminderProcessor`, `NotificationQueryService`; порт `NotificationChannel` + `InAppNotificationChannel`; слушатель `notification-service.events`; фоновый планировщик напоминаний; API `/api/notifications`, `/unread-count`, `/{id}/read`;
+- миграция `V2__reminder_jobs_drop_lease.sql`; `fitclub-messaging`: outbox отключаемый (`fitclub.outbox.enabled`).
 
 Проверки:
-- `mvnw verify` по всем модулям — **BUILD SUCCESS**, 254 теста. booking-service: 5 доменных, 4 ArchUnit, 18 интеграционных на PostgreSQL + RabbitMQ + WireMock-Membership и 5 каркасных:
-  - правила: `SESSION_NOT_READY`, eligibility запрашивается на `starts_at`, место + посещение + событие v1, повторная запись, полная группа, исчерпанный лимит, безлимит, начавшееся занятие, Membership медленный → 504, повтор старого ключа после отмены → тот же ответ;
-  - отмена: ровно на границе 120 минут можно, через секунду нельзя; повторная отмена не возвращает посещение второй раз; чужая бронь → 404;
-  - участники: назначенный тренер и ADMIN — да, другой тренер и клиент — 403;
-  - проекция: `SessionCancelled` отменяет все брони с возвратом, по одному `BookingCancelled`; опоздавший `SessionPublished` не открывает запись; отмена раньше публикации → «надгробие»;
-  - **конкурентность**: 2 клиента на последнее место → 1; 10 клиентов на 3 места → 3; 1 клиент, 2 занятия, 1 посещение → 1; отмена пользователем ∥ отмена занятия → возврат один раз и одно событие (тест нашёл ошибку кэша Hibernate, исправлено, 3 прогона подряд зелёные);
-- Docker (`docker,demo`): при первом запуске booking обработал `SessionPublished`, ожидавшее с шага 5; через Gateway: Иван без абонемента → `MEMBERSHIP_NOT_VALID`; Мария записалась (места 1 → 0, посещения 8 → 7), повтор → `ALREADY_BOOKED`; тренер Ольга видит участницу «Мария Клиентова», клиент → 403; отмена Марии вернула место и посещение; в `notification-service.events` ждут `MembershipActivated`, `BookingConfirmed`, `BookingCancelled`; трассировка по одному `request_id`: gateway → booking → membership (eligibility).
+- `mvnw verify` по всем модулям — **BUILD SUCCESS**, 270 тестов. notification-service: 6 доменных (правило напоминания, пропуск начавшегося, версии, часовой пояс), 5 сценариев на fake-канале, 4 ArchUnit, 5 интеграционных на RabbitMQ (уведомление в API и подавление дублей при повторе того же и нового `event_id`; прочитать может только получатель; напоминание ровно один раз в момент `start − 60 мин` при управляемом `Clock`, отмена подавляет напоминание; задача из БД, созданная «до перезапуска», обрабатывается; опоздавшее подтверждение после отмены ничего не создаёт), 5 каркасных;
+- Docker (`docker,demo`): при первом запуске notification обработал три события, ожидавших с шагов 7–8 (`MembershipActivated`, `BookingConfirmed`, `BookingCancelled`), время показано по Кишинёву, напоминание отменённой брони — `CANCELLED`; **notification остановлен → Мария записалась (успешно), `GET /api/notifications` → 503, событие в очереди → notification запущен → уведомление появилось**; задача напоминания `PENDING` сохранилась после `docker compose restart notification-service`; отметка прочтения уменьшила `unread` 4 → 3.
 
 ## Ближайшая задача
 
-Шаг 9: notification-service — уведомления по `MembershipActivated`, `BookingConfirmed`, `BookingCancelled`; API списка, количества непрочитанных и отметки прочтения; сохраняемые напоминания (`REMINDER_LEAD_MINUTES`), защита от двойного выполнения, отмена напоминания, проекция/«надгробие» по версии бронирования, `Clock` в тестах; сценарий «Notification остановлен → запущен».
+Шаг 10: UI (HTML/CSS/JS на Nginx, все роли, работа только через Gateway, токены в памяти вкладки, ограниченный polling активации), финальный Compose (frontend, публичный порт), demo-профиль и повторяемое заполнение demo-данными через API.

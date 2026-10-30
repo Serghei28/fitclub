@@ -5,3 +5,5 @@ server:
 spring:
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://postgres:5432/notification_db}
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:rabbitmq}

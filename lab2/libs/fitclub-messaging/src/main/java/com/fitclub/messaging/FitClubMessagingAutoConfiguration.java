@@ -7,6 +7,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,7 +27,9 @@ import tools.jackson.databind.json.JsonMapper;
 @EnableScheduling
 public class FitClubMessagingAutoConfiguration {
 
+    /** fitclub.outbox.enabled=false — сервис только потребляет события и не имеет таблицы outbox_events. */
     @Bean
+    @ConditionalOnProperty(name = "fitclub.outbox.enabled", havingValue = "true", matchIfMissing = true)
     OutboxWriter outboxWriter(JdbcTemplate jdbc, JsonMapper jsonMapper, Clock clock,
             @Value("${spring.application.name}") String producer) {
         return new OutboxWriter(jdbc, jsonMapper, clock, producer);
@@ -34,6 +37,7 @@ public class FitClubMessagingAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(RabbitTemplate.class)
+    @ConditionalOnProperty(name = "fitclub.outbox.enabled", havingValue = "true", matchIfMissing = true)
     OutboxRelay outboxRelay(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, RabbitTemplate rabbit,
             OutboxProperties properties, Clock clock) {
         return new OutboxRelay(jdbc, new TransactionTemplate(transactionManager), rabbit, properties, clock);
@@ -49,6 +53,7 @@ public class FitClubMessagingAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "fitclub.outbox.enabled", havingValue = "true", matchIfMissing = true)
     OutboxHealthIndicator outboxHealthIndicator(JdbcTemplate jdbc, OutboxProperties properties, Clock clock) {
         return new OutboxHealthIndicator(jdbc, properties, clock);
     }

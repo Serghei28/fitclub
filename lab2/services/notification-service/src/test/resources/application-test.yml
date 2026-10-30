@@ -1,2 +1,8 @@
 # Профиль test: значения секретов только для автотестов. БД поднимает Testcontainers (@ServiceConnection).
 db_notification_password: not-used-with-testcontainers
+rabbitmq_notification_password: guest
+fitclub:
+  notification:
+    # В тестах напоминания обрабатываются явным вызовом ReminderProcessor при управляемых часах
+    reminders:
+      scheduler-enabled: false

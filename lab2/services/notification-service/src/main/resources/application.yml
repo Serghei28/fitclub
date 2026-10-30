@@ -13,6 +13,11 @@ spring:
   config:
     # Каждый файл каталога секретов становится свойством с именем файла (db_notification_password и т.д.)
     import: optional:configtree:${FITCLUB_SECRETS_DIR:secrets}/
+  rabbitmq:
+    host: ${FITCLUB_RABBITMQ_HOST:localhost}
+    port: ${FITCLUB_RABBITMQ_PORT:5672}
+    username: notification_service
+    password: ${rabbitmq_notification_password}
   datasource:
     url: ${FITCLUB_DB_URL:jdbc:postgresql://localhost:5432/notification_db}
     username: ${FITCLUB_DB_USER:notification_user}
@@ -20,6 +25,14 @@ spring:
 
 server:
   port: ${PORT:8086}
+
+# Notification только потребляет события: outbox не используется, в группе messaging только брокер
+management:
+  endpoint:
+    health:
+      group:
+        messaging:
+          include: rabbit
 
 fitclub:
   openapi:
@@ -33,3 +46,15 @@ fitclub:
   internal:
     # Внутреннего API у сервиса нет: любой запрос к /internal/** получит 401
     clients: []
+  outbox:
+    enabled: false
+  notification:
+    # Своя очередь потребителя (topology.json): MembershipActivated, BookingConfirmed, BookingCancelled
+    events-queue: notification-service.events
+    display-zone: Europe/Chisinau
+    # За сколько до начала занятия напомнить (REMINDER_LEAD_MINUTES)
+    reminder-lead: ${REMINDER_LEAD_MINUTES:60}m
+    reminders:
+      scheduler-enabled: true
+      poll-interval: 15s
+      batch-size: 50

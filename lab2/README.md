@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 8 из 11.** Готовы auth, schedule, membership, payment и **booking-service**, API Gateway (`http://localhost:8000`). Работает основной сценарий клиента: абонемент → оплата → запись на занятие → отмена, с защитой мест и посещений от гонок. Notification — шаг 9, UI — шаг 10, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 9 из 11.** Реализованы **все шесть бизнес-сервисов**: auth, schedule, membership, payment, booking и notification. Работают API Gateway (`http://localhost:8000`) и сквозные сценарии через REST и RabbitMQ: абонемент → оплата → запись → уведомления и напоминания. UI — шаг 10, итоговые проверки и документация для защиты — шаг 11, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -373,6 +373,33 @@ docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
 7. Под ADMIN в `schedule-service` `POST /api/sessions/{id}/cancel`: через долю секунды все записи на это занятие отменены (`cancel_reason: SESSION_CANCELLED`), посещения возвращены.
 
 Окно отмены настраивается переменной `CANCEL_BEFORE_MINUTES` (по умолчанию 120).
+
+## Проверка шага 9 (уведомления)
+
+В общем Swagger UI под клиентом выберите `notification-service`:
+
+1. `GET /api/notifications` — уведомления об активации абонемента, записи и отмене (время в тексте — по Кишинёву).
+2. `GET /api/notifications/unread-count`, затем `PATCH /api/notifications/{id}/read`: счётчик уменьшается. Чужое уведомление — `404`.
+
+Notification не нужен для записи на занятие, и уведомления не теряются, пока он выключен:
+
+```bash
+docker compose stop notification-service
+```
+
+Запишитесь на занятие (booking-service), затем:
+
+```bash
+docker compose start notification-service
+```
+
+Через несколько секунд подтверждение записи появится в `GET /api/notifications`.
+
+Напоминание приходит за `REMINDER_LEAD_MINUTES` (по умолчанию 60) минут до начала. Задачи видны в БД и переживают перезапуск:
+
+```bash
+docker compose exec postgres psql -U postgres -d notification_db -c "select status, remind_at, starts_at from reminder_jobs"
+```
 
 ## Логи, остановка, пересборка одного сервиса
 

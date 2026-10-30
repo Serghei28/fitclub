@@ -323,6 +323,20 @@ Idempotency-Key: 2d4f…
 - `GET /api/availability?session_id=…&session_id=…` (до 100 id) — `[{"session_id", "state": "OPEN|CANCELLED|NOT_READY", "capacity", "booked", "available", "starts_at"}]`. Источник истины по местам — Booking, а не Schedule.
 - `GET /api/sessions/{id}/bookings` — участники (`display_name` — снимок имени из JWT на момент записи). Доступ только у назначенного тренера этого занятия и ADMIN, остальным `403`.
 
+### Notification: реализовано (шаг 9)
+
+`GET /api/notifications?unread=true&page=0&size=20`:
+
+```json
+{"items": [{"id": "1f0e…", "type": "BOOKING_CONFIRMED", "title": "Вы записаны на занятие",
+  "body": "Вы записаны на «Пилатес утром», начало 01.11.2026 09:00.", "read": false, "created_at": "…"}],
+ "page": 0, "size": 20, "total_elements": 1, "total_pages": 1}
+```
+
+- `type`: `MEMBERSHIP_ACTIVATED`, `BOOKING_CONFIRMED`, `BOOKING_CANCELLED`, `SESSION_CANCELLED`, `SESSION_REMINDER`.
+- `GET /api/notifications/unread-count` → `{"unread": 3}`.
+- `PATCH /api/notifications/{id}/read` отмечает прочитанным, повторная отметка не меняет `read_at`. Чужое уведомление — `404`.
+
 **Маршрутизация `/api/sessions`.** В Gateway правило `Path=/api/sessions/{id}/bookings` → booking-service стоит **раньше** общего `Path=/api/sessions/**` → schedule-service. Порядок задаётся явно и проверяется тестом Gateway.
 
 ## Внутренние маршруты (service authentication)
