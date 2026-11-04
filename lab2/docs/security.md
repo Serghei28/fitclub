@@ -45,7 +45,9 @@
 
 ## Токены в браузере
 
-UI (шаг 10) будет хранить access и refresh **только в памяти вкладки**: не в `localStorage`, не в cookie, не в URL. После перезагрузки страницы нужен повторный вход. Ответы с токенами отправляются с `Cache-Control: no-store`. Токены, пароли и заголовок `Authorization` не логируются: проверено по логам контейнера.
+UI хранит access и refresh **только в памяти вкладки** (переменные модуля `api.js`): не в `localStorage`, не в `sessionStorage`, не в cookie, не в URL. После перезагрузки страницы нужен повторный вход. Запросы идут с `credentials: 'omit'`. При `401` выполняется один общий refresh на все параллельные запросы: ротация делает старый refresh-токен недействительным, поэтому параллельные refresh отозвали бы цепочку. Если refresh не удался, токены стираются и показывается экран входа.
+
+Защита от XSS: данные из API вставляются в страницу только как текст (`textContent`, `createTextNode`), `innerHTML` не используется. Nginx отдаёт `Content-Security-Policy: default-src 'self'; script-src 'self'; ...; frame-ancestors 'none'`: inline-скрипты и чужие источники запрещены. Также `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `server_tokens off`. Ответы с токенами отправляются с `Cache-Control: no-store`. Токены, пароли и заголовок `Authorization` не логируются: проверено по логам контейнера.
 
 ## CORS и CSRF
 
@@ -92,6 +94,10 @@ UI (шаг 10) будет хранить access и refresh **только в п�
 - Каталог `secrets/` и `.env` исключены из Git. В `.env.example` только порты и email администратора.
 - `GenerateSecrets.java` создаёт недостающие секреты, существующие не перезаписывает и значения не печатает.
 - В контейнер секреты попадают через Compose secrets (`/run/secrets`). Закрытый ключ JWT и пароль первого администратора монтируются только в auth-service.
+
+## Demo-пользователи
+
+Demo-пользователей создаёт только `demo-seed`, его запускают явно (`docker compose --profile demo run --rm demo-seed`). Пароль общий для них, генерируется в `secrets/demo_users_password`, в коде, логах и выводе сидера его нет. Сидер работает через публичный API под администратором, пароль которого тоже читается из секрета. В рабочем режиме (`docker` без `demo`) demo-данных нет.
 
 ## Первый администратор
 

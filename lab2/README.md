@@ -2,7 +2,7 @@
 
 Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
 
-> **Состояние: шаг 9 из 11.** Реализованы **все шесть бизнес-сервисов**: auth, schedule, membership, payment, booking и notification. Работают API Gateway (`http://localhost:8000`) и сквозные сценарии через REST и RabbitMQ: абонемент → оплата → запись → уведомления и напоминания. UI — шаг 10, итоговые проверки и документация для защиты — шаг 11, план — в [docs/progress.md](docs/progress.md).
+> **Состояние: шаг 10 из 11.** Реализованы все шесть бизнес-сервисов, API Gateway и веб-интерфейс для всех ролей: **http://localhost:8080**. Сквозной сценарий абонемент → оплата → запись → уведомления проходит через UI. Demo-данные заполняются явной командой (см. «Проверка шага 10»). Итоговые проверки и документация для защиты — шаг 11, план — в [docs/progress.md](docs/progress.md).
 
 ## Документация
 
@@ -21,7 +21,7 @@
 ```
 lab2/
 ├── pom.xml, mvnw, mvnw.cmd, .mvn/      родительский POM (только версии) и Maven Wrapper
-├── docker-compose.yml                  инфраструктура + шесть сервисов
+├── docker-compose.yml                  инфраструктура, шесть сервисов, gateway, frontend, demo-seed (профиль demo)
 ├── docker-compose.dev.yml              dev-override: порты сервисов 8081–8086 на 127.0.0.1
 ├── libs/
 │   ├── fitclub-common/                 техника: JSON-логи, X-Request-ID, problem+json, JWT, X-Service-Token, health, HTTP-клиент
@@ -32,9 +32,10 @@ lab2/
 │       ├── pom.xml, Dockerfile
 │       ├── src/main/resources/application*.yml, db/migration/V1__*.sql
 │       └── src/test/...                ArchitectureTest, *ServiceSkeletonIT
-├── infrastructure/                     bootstrap БД, топология RabbitMQ, генератор секретов
+├── infrastructure/                     bootstrap БД, топология RabbitMQ, генератор секретов, demo/seed.py
 ├── gateway/                            API Gateway (Spring Cloud Gateway, WebFlux)
-├── frontend/, tests/                   появятся на шагах 10, 11
+├── frontend/                           UI: nginx.conf, Dockerfile, static/ (HTML, CSS, ES-модули JS без сборки)
+├── tests/                              появится на шаге 11
 └── docs/
 ```
 
@@ -46,7 +47,7 @@ Java 21 LTS, Spring Boot 4.1.2, Spring Cloud 2025.1.4 (Gateway), Spring Security
 
 - **JDK 21** (например, Eclipse Temurin 21). Maven ставить не нужно: используется Maven Wrapper (`mvnw` / `mvnw.cmd`).
 - **Docker Desktop** с Docker Compose v2. На Windows Docker Desktop должен быть запущен в режиме Linux-контейнеров (WSL 2 backend).
-- Свободные локальные порты `5432`, `5672`, `15672`, для dev-режима ещё `8081`–`8086`. Порты инфраструктуры можно поменять в `.env`, см. `.env.example`.
+- Свободные локальные порты `8080` (UI), `8000` (Gateway), `5432`, `5672`, `15672`, для dev-режима ещё `8081`–`8086`. Порты инфраструктуры можно поменять в `.env`, см. `.env.example`.
 
 Проверка окружения:
 
@@ -90,7 +91,9 @@ docker compose ps
 
 ## Адреса
 
-**Основной вход — API Gateway:**
+**Основной вход — интерфейс:** http://localhost:8080 (порт меняется переменной `UI_HOST_PORT`). Через него же доступны `/api/...` и Swagger UI.
+
+**API Gateway** (напрямую, для Swagger и отладки):
 
 | Что | Адрес |
 |---|---|
@@ -113,7 +116,6 @@ docker compose ps
 - `/health` — liveness процесса.
 - `/ready` — готовность: собственная БД доступна и все миграции применены.
 
-Бизнес-endpoint'ы пока есть только у auth-service, у остальных Swagger показывает пустой список операций.
 
 ## Первый администратор
 
@@ -401,6 +403,42 @@ docker compose start notification-service
 docker compose exec postgres psql -U postgres -d notification_db -c "select status, remind_at, starts_at from reminder_jobs"
 ```
 
+## Проверка шага 10 (интерфейс и demo-данные)
+
+**1. Запустить стенд в demo-режиме.** Профиль `demo` включает тестовое завершение оплаты (`POST /api/payments/{id}/simulate`), без него UI честно сообщит, что тестовая оплата выключена:
+
+```bash
+FITCLUB_PROFILES=docker,demo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+В PowerShell переменная задаётся отдельной командой: `$env:FITCLUB_PROFILES="docker,demo"`, затем та же команда `docker compose ...`. Можно и раскомментировать строку `FITCLUB_PROFILES` в `.env`.
+
+**2. Заполнить demo-данными** (только по явной команде, повторный запуск ничего не дублирует):
+
+```bash
+docker compose --profile demo run --rm demo-seed
+```
+
+Сидер ходит только в публичный API через Gateway, как обычный клиент и администратор, а не пишет в базы: правила проверяет каждый сервис, события публикуются как обычно. Создаются:
+- тренеры `trainer.anna@fitclub.demo`, `trainer.boris@fitclub.demo` и клиенты `client.elena@fitclub.demo`, `client.dmitry@fitclub.demo`, `client.olga@fitclub.demo`. Общий пароль лежит в `secrets/demo_users_password` (`Get-Content secrets\demo_users_password`) и на экран не выводится;
+- тарифы «Старт — 4 посещения», «Стандарт — 8 посещений», «Безлимит»; типы «Йога», «Пилатес», «Функциональный тренинг»;
+- пять опубликованных занятий на три дня, начиная с завтрашнего (одно — на одно место, для сценария «мест нет»);
+- Елене и Дмитрию — абонементы через заказ и тестовую оплату; Елена записана на «Утреннюю йогу». У Ольги абонемента нет: на ней удобно показать покупку.
+
+**3. Открыть http://localhost:8080.** Это публичный вход: Nginx раздаёт UI и проксирует `/api` в Gateway с того же origin. Через него же доступен Swagger: http://localhost:8080/swagger-ui.html.
+
+| Роль | Что проверить |
+|---|---|
+| Клиент (Ольга или новая регистрация) | «Тарифы» → «Оформить» → «Оплатить (тест: успешно)» → «Активация абонемента…» → абонемент активирован; «Расписание» → «Записаться»; «Мои записи» → «Отменить запись» или срок, до которого можно отменить; «Уведомления» и счётчик в шапке |
+| Тренер (Анна) | «Мои занятия» → «Участники» |
+| Администратор | «Занятия»: тип тренировки, черновик, правка черновика, публикация, отмена с причиной. «Тарифы клуба»: создание, снятие с продажи. «Пользователи»: поиск и роли |
+
+Что важно для защиты:
+- токены хранятся только в памяти вкладки. `localStorage`, `sessionStorage` и cookie пусты, после перезагрузки страницы нужен вход. Refresh выполняется автоматически, один на все параллельные запросы;
+- кнопка блокируется на время запроса, повторный клик не создаёт второй запрос. Для оплаты и записи UI отправляет `Idempotency-Key`; при сетевой ошибке повтор идёт с тем же ключом;
+- активация абонемента асинхронная (событие `payment.succeeded`), поэтому UI опрашивает `GET /api/memberships/me` раз в секунду не дольше 20 секунд. Счётчик уведомлений обновляется раз в 30 секунд и только при видимой вкладке;
+- при остановленном Gateway (`docker compose stop gateway`) страница открывается, а `/api` отвечает `503` problem+json `DEPENDENCY_UNAVAILABLE`, и UI показывает понятное сообщение.
+
 ## Логи, остановка, пересборка одного сервиса
 
 Логи одного сервиса в реальном времени:
@@ -427,7 +465,9 @@ docker compose down
 
 | Симптом | Причина и решение |
 |---|---|
-| `secret file ... not found` при `docker compose up` | Секреты не сгенерированы. Выполните шаг 1 «Первого запуска» |
+| `secret file ... not found` при `docker compose up` | Секреты не сгенерированы (или появился новый, например `demo_users_password` на шаге 10). Запустите генератор из шага 1 «Первого запуска»: он добавит только недостающие файлы |
+| В UI после оплаты: «Тестовая оплата выключена» | Стенд запущен без профиля demo. Перезапустите с `FITCLUB_PROFILES=docker,demo` |
+| UI не открывается, `docker compose ps` без `frontend` | Образ UI не собран: `docker compose up -d --build frontend` |
 | `port is already allocated` | Порт занят, например локальным PostgreSQL или сервисом из IDE. Задайте другой в `.env` (`POSTGRES_HOST_PORT=15432`) или остановите конфликтующий процесс |
 | Сервис в `docker compose ps` долго `unhealthy` / перезапускается | Смотрите `docker compose logs <service>`. Частая причина — БД недоступна или `postgres-bootstrap` завершился с ошибкой |
 | При запуске из IDE: `Could not resolve placeholder 'db_auth_password'` | Рабочий каталог не `lab2`, и сервис не видит `secrets/`. Используйте `.vscode/launch.json` или задайте `FITCLUB_SECRETS_DIR` с абсолютным путём |

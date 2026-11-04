@@ -18,7 +18,7 @@
 
 ## API Gateway (шаг 4)
 
-Единая точка входа: `http://localhost:8000` (в Compose порт задаётся переменной `GATEWAY_HOST_PORT`). Общий Swagger UI со всеми сервисами: http://localhost:8000/swagger-ui.html, сервис выбирается в выпадающем списке.
+Единая точка входа API: `http://localhost:8000` (в Compose порт задаётся переменной `GATEWAY_HOST_PORT`). UI работает с тем же API через Nginx с собственного origin: `http://localhost:8080/api/...`. Общий Swagger UI со всеми сервисами: http://localhost:8000/swagger-ui.html, сервис выбирается в выпадающем списке.
 
 | Порядок | Маршрут | Сервис |
 |---|---|---|

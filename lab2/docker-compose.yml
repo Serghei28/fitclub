@@ -284,6 +284,45 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # --- Интерфейс: статика на Nginx, /api проксируется в Gateway с того же origin ---
+  # Не ждёт Gateway: при его недоступности Nginx отвечает контролируемым 503 (problem+json).
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: fitclub/frontend:1.0.0
+    ports:
+      # Публичная точка входа: http://localhost:8080 (UI, /api и /swagger-ui.html)
+      - "127.0.0.1:${UI_HOST_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/nginx-health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+  # --- Demo-данные: одноразовый запуск только по явной команде ---
+  #   docker compose --profile demo run --rm demo-seed
+  # Ходит только в публичный API через Gateway (не пишет в базы напрямую), повторный запуск безопасен.
+  demo-seed:
+    image: python:3.13.18-alpine
+    profiles: ["demo"]
+    command: ["python", "-I", "/demo/seed.py"]
+    environment:
+      FITCLUB_API: http://gateway:8080
+      FITCLUB_AUTH_INITIAL_ADMIN_EMAIL: ${FITCLUB_AUTH_INITIAL_ADMIN_EMAIL:-admin@fitclub.local}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./infrastructure/demo:/demo:ro
+    secrets:
+      - auth_initial_admin_password
+      - demo_users_password
+    depends_on:
+      gateway:
+        condition: service_started
+    restart: "no"
+
 volumes:
   postgres-data:
   rabbitmq-data:
@@ -311,6 +350,8 @@ secrets:
     file: ./secrets/jwt_private_key.pem
   auth_initial_admin_password:
     file: ./secrets/auth_initial_admin_password
+  demo_users_password:
+    file: ./secrets/demo_users_password
   service_token_schedule_to_auth:
     file: ./secrets/service_token_schedule_to_auth
   rabbitmq_schedule_password:
