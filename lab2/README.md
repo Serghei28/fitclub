@@ -1,20 +1,44 @@
 # FitClub
 
-Учебное микросервисное backend-приложение фитнес-клуба: пользователи и роли, расписание групповых тренировок, абонементы, бронирования, тестовые платежи и уведомления. Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс для демонстрации.
+Учебное микросервисное приложение фитнес-клуба:
+- пользователи и роли;
+- расписание групповых тренировок;
+- абонементы и тестовые платежи;
+- запись на занятия;
+- уведомления и напоминания.
 
-> **Состояние: шаг 10 из 11.** Реализованы все шесть бизнес-сервисов, API Gateway и веб-интерфейс для всех ролей: **http://localhost:8080**. Сквозной сценарий абонемент → оплата → запись → уведомления проходит через UI. Demo-данные заполняются явной командой (см. «Проверка шага 10»). Итоговые проверки и документация для защиты — шаг 11, план — в [docs/progress.md](docs/progress.md).
+Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс на Nginx. Всё запускается одной командой Docker Compose.
+
+> **Состояние: все 11 шагов выполнены.** `mvnw verify` — 270 тестов, сквозные проверки через Gateway (`tests/e2e`) — 9 сценариев, включая остановку Notification, Membership и RabbitMQ. Результаты — в [docs/testing.md](docs/testing.md), материалы для защиты — в [docs/defense.md](docs/defense.md).
 
 ## Документация
 
 | Файл | Содержание |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | Границы шести сервисов, схема компонентов, владение данными, изоляция БД |
-| [docs/api.md](docs/api.md) | Контракт REST, формат ошибок, `Idempotency-Key`, ссылки на Swagger |
-| [docs/events.md](docs/events.md) | Контракты событий, топология RabbitMQ, outbox, потребители, DLQ |
-| [docs/flows.md](docs/flows.md) | Сценарии с REST и событиями, транзакции, eventual consistency, сбои |
-| [docs/security.md](docs/security.md) | Роли, пароли, JWT, refresh-токены, служебные токены, секреты, ограничения |
-| [docs/decisions.md](docs/decisions.md) | Проверенные версии, ключевые решения, допущения |
-| [docs/progress.md](docs/progress.md) | План шагов, текущее состояние, последние проверки |
+| [docs/architecture.md](docs/architecture.md) | Границы шести сервисов, схема компонентов, владение данными, изоляция БД, компромиссы локального окружения |
+| [docs/flows.md](docs/flows.md) | Оплата и активация, запись, отмена: REST, события, транзакции, eventual consistency, сбои |
+| [docs/events.md](docs/events.md) | Версионированные контракты событий, routing keys, очереди, retry/DLQ, outbox, идемпотентность |
+| [docs/api.md](docs/api.md) | Маршруты, примеры, формат ошибок, `Idempotency-Key`, ссылки на OpenAPI |
+| [docs/security.md](docs/security.md) | Роли, владение ресурсами, JWT, refresh, служебные токены, секреты, UI, ограничения |
+| [docs/solid.md](docs/solid.md) | Пять принципов SOLID на реальных классах, проверки ArchUnit и тесты |
+| [docs/testing.md](docs/testing.md) | Стратегия, команды, конкурентность и сбои, фактические результаты |
+| [docs/requirements-matrix.md](docs/requirements-matrix.md) | Требование → где реализовано → как проверить |
+| [docs/defense.md](docs/defense.md) | Сценарий защиты и ответы на вопросы |
+| [docs/decisions.md](docs/decisions.md) | Проверенные версии, решения D1–D70, допущения |
+| [docs/progress.md](docs/progress.md) | Выполненные шаги и последние проверки |
+
+## Сервисы
+
+| Сервис | Отвечает за | Своя БД | Взаимодействие |
+|---|---|---|---|
+| auth-service | Регистрация, вход, JWT RS256, refresh, роли | `auth_db` | → внутренний trainer-status для Schedule |
+| schedule-service | Типы тренировок, занятия DRAFT → PUBLISHED → CANCELLED | `schedule_db` | REST → Auth; события `session.published/cancelled` |
+| membership-service | Тарифы, заказы, абонементы, право на посещение | `membership_db` | внутренние API для Payment и Booking; слушает `payment.*`; событие `membership.activated` |
+| payment-service | Платежи, тестовый провайдер (симулятор), идемпотентность | `payment_db` | REST → Membership; события `payment.succeeded/declined` |
+| booking-service | Места, запись, лимит посещений, отмена | `booking_db` | REST → Membership (eligibility); слушает `session.*`; события `booking.*` |
+| notification-service | Уведомления и сохраняемые напоминания | `notification_db` | слушает `membership.activated`, `booking.confirmed/cancelled` (отмена занятия приходит как отмена записей) |
+
+API Gateway, Nginx (UI), PostgreSQL и RabbitMQ — инфраструктура, бизнес-правил в них нет. Подробно — в [docs/architecture.md](docs/architecture.md).
 
 ## Структура
 
@@ -23,31 +47,41 @@ lab2/
 ├── pom.xml, mvnw, mvnw.cmd, .mvn/      родительский POM (только версии) и Maven Wrapper
 ├── docker-compose.yml                  инфраструктура, шесть сервисов, gateway, frontend, demo-seed (профиль demo)
 ├── docker-compose.dev.yml              dev-override: порты сервисов 8081–8086 на 127.0.0.1
+├── .env.example                        порты и профили (секретов нет)
 ├── libs/
 │   ├── fitclub-common/                 техника: JSON-логи, X-Request-ID, problem+json, JWT, X-Service-Token, health, HTTP-клиент
-│   ├── fitclub-messaging/              конверт события, transactional outbox, relay в RabbitMQ
-│   └── fitclub-test-support/           только для тестов: PostgreSQL Testcontainers, тестовые JWT, ArchUnit-правила
-├── services/
-│   └── <name>-service/                 auth, schedule, membership, booking, payment, notification
-│       ├── pom.xml, Dockerfile
-│       ├── src/main/resources/application*.yml, db/migration/V1__*.sql
-│       └── src/test/...                ArchitectureTest, *ServiceSkeletonIT
-├── infrastructure/                     bootstrap БД, топология RabbitMQ, генератор секретов, demo/seed.py
+│   ├── fitclub-messaging/              конверт события, transactional outbox, relay, обработка с retry/DLQ
+│   └── fitclub-test-support/           только для тестов: Testcontainers, тестовые JWT, ArchUnit-правила
+├── services/<name>-service/            auth, schedule, membership, booking, payment, notification:
+│                                       pom.xml, Dockerfile, api/application/domain/infrastructure, миграции, тесты
 ├── gateway/                            API Gateway (Spring Cloud Gateway, WebFlux)
 ├── frontend/                           UI: nginx.conf, Dockerfile, static/ (HTML, CSS, ES-модули JS без сборки)
-├── tests/                              появится на шаге 11
+├── infrastructure/                     bootstrap БД и ролей, топология RabbitMQ, генератор секретов, demo/seed.py
+├── tests/e2e/                          сквозные проверки через Gateway и скрипты изолированного стенда
 └── docs/
 ```
 
-## Стек
+## Стек и причины выбора
 
-Java 21 LTS, Spring Boot 4.1.2, Spring Cloud 2025.1.4 (Gateway), Spring Security (JWT RS256), Spring Data JPA + Flyway, PostgreSQL 17, RabbitMQ 4.1 + Spring AMQP, springdoc-openapi 3.2.0, JUnit Jupiter 6 / Mockito / Testcontainers / WireMock / ArchUnit, Nginx + HTML/CSS/JS, Docker Compose. Причины выбора и проверка совместимости описаны в [docs/decisions.md](docs/decisions.md).
+| Технология | Почему |
+|---|---|
+| Java 21 LTS, Spring Boot 4.1.2 | Типизация, DI, зрелая экосистема для REST, безопасности, данных и тестов |
+| Spring Security, JWT RS256 | Сервисы проверяют токен локально по публичному ключу, закрытый ключ только у Auth |
+| Spring Data JPA, Flyway, PostgreSQL 17 | Транзакции и блокировки строк для мест и лимитов, версионированные миграции, шесть логических БД на одном сервере |
+| RabbitMQ 4.1, Spring AMQP | Асинхронные события с подтверждениями, quorum-очереди, DLQ |
+| Spring Cloud Gateway 2025.1.4 | Единая точка входа, проверка JWT до сервисов, закрытие `/internal` |
+| springdoc-openapi 3.2.0 | OpenAPI и Swagger UI для каждого сервиса и общий UI в Gateway |
+| JUnit 6, Testcontainers, WireMock, ArchUnit, Awaitility | Правила, настоящие PostgreSQL/RabbitMQ в тестах, контроль архитектуры, ожидание асинхронности |
+| Nginx + HTML/CSS/JS | UI без сборки и фреймворка, тот же origin для `/api` |
+| Docker Compose | Воспроизводимый запуск без облачных аккаунтов |
+
+Проверка совместимости версий — в [docs/decisions.md](docs/decisions.md).
 
 ## Требования к окружению
 
 - **JDK 21** (например, Eclipse Temurin 21). Maven ставить не нужно: используется Maven Wrapper (`mvnw` / `mvnw.cmd`).
-- **Docker Desktop** с Docker Compose v2. На Windows Docker Desktop должен быть запущен в режиме Linux-контейнеров (WSL 2 backend).
-- Свободные локальные порты `8080` (UI), `8000` (Gateway), `5432`, `5672`, `15672`, для dev-режима ещё `8081`–`8086`. Порты инфраструктуры можно поменять в `.env`, см. `.env.example`.
+- **Docker Desktop** с Docker Compose v2. На Windows Docker Desktop должен быть запущен и работать с Linux-контейнерами (WSL 2 backend). Рекомендуется не меньше 6–8 ГБ памяти для Docker.
+- Свободные локальные порты `8080` (UI), `8000` (Gateway), `5432`, `5672`, `15672`, для dev-режима ещё `8081`–`8086`. Порты меняются в `.env`, см. `.env.example`.
 
 Проверка окружения:
 
@@ -61,156 +95,132 @@ docker compose version
 
 Все команды выполняются из каталога `lab2`.
 
-**1. Сгенерировать локальные секреты.** Будут созданы пароли БД, пароли RabbitMQ, межсервисные токены и RSA-ключи JWT. Файлы появятся в `secrets/`, этот каталог исключён из Git. Существующие файлы не перезаписываются, значения на экран не выводятся.
+**1. Сгенерировать локальные секреты.** Будут созданы:
+- пароли БД и RabbitMQ;
+- межсервисные токены;
+- RSA-ключи JWT;
+- пароль первого администратора;
+- общий пароль demo-пользователей.
 
-Windows PowerShell:
+Файлы появятся в `secrets/`, этот каталог исключён из Git. Существующие файлы не перезаписываются, значения на экран не выводятся.
 
 ```powershell
 .\infrastructure\scripts\init-secrets.ps1
 ```
 
-Bash:
-
 ```bash
 sh infrastructure/scripts/init-secrets.sh
 ```
 
-**2. Собрать образы и запустить всё вместе с портами сервисов.** Первая сборка занимает несколько минут: в контейнере скачиваются Maven и зависимости.
+**2. Собрать и запустить стенд в demo-режиме.** Профиль `demo` включает тестовое завершение оплаты (`POST /api/payments/{id}/simulate`). Первая сборка занимает несколько минут: в контейнере скачиваются Maven и зависимости.
 
-```bash
+Windows PowerShell:
+
+```powershell
+$env:FITCLUB_PROFILES = "docker,demo"
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
+
+Bash:
+
+```bash
+FITCLUB_PROFILES=docker,demo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+Вместо переменной можно раскомментировать строку `FITCLUB_PROFILES=docker,demo` в `.env` (скопируйте `.env.example` в `.env`). Без профиля demo стенд работает в рабочем режиме: оплату нельзя завершить тестовой кнопкой.
 
 ```bash
 docker compose ps
 ```
 
-Все `*-service`, `postgres` и `rabbitmq` должны быть `healthy`, `postgres-bootstrap` — `Exited (0)`.
+Все `*-service`, `gateway`, `frontend`, `postgres` и `rabbitmq` должны быть `healthy`, `postgres-bootstrap` — `Exited (0)`. Без `docker-compose.dev.yml` порты сервисов 8081–8086 не публикуются: внешний вход — только UI и Gateway.
 
-Без `docker-compose.dev.yml` сервисы тоже запускаются, но их порты не публикуются: в итоговой схеме внешний вход — только UI и Gateway.
+**3. Заполнить demo-данными** (только по явной команде; повторный запуск ничего не дублирует):
+
+```bash
+docker compose --profile demo run --rm demo-seed
+```
+
+**4. Открыть http://localhost:8080.**
 
 ## Адреса
 
-**Основной вход — интерфейс:** http://localhost:8080 (порт меняется переменной `UI_HOST_PORT`). Через него же доступны `/api/...` и Swagger UI.
-
-**API Gateway** (напрямую, для Swagger и отладки):
-
 | Что | Адрес |
 |---|---|
-| API | http://localhost:8000/api/... |
-| Общий Swagger UI (все шесть сервисов, выбор в списке справа сверху) | http://localhost:8000/swagger-ui.html |
+| **Интерфейс** (публичный вход; `/api` и Swagger проксируются в Gateway) | http://localhost:8080 |
+| API Gateway | http://localhost:8000/api/... |
+| Общий Swagger UI (шесть сервисов, выбор в списке справа сверху) | http://localhost:8000/swagger-ui.html или http://localhost:8080/swagger-ui.html |
 | Health / Ready Gateway | http://localhost:8000/health, http://localhost:8000/ready |
+| RabbitMQ Management | http://localhost:15672 (`fitclub_admin`, пароль в `secrets/rabbitmq_admin_password`) |
 
-**Служебные адреса сервисов (dev-режим):**
+**Служебные адреса сервисов (только dev-режим, 127.0.0.1):**
 
-| Сервис | Health / Ready | Swagger UI | OpenAPI JSON |
-|---|---|---|---|
-| auth-service | http://localhost:8081/health, `/ready` | http://localhost:8081/swagger-ui.html | http://localhost:8081/v3/api-docs |
-| schedule-service | http://localhost:8082/health, `/ready` | http://localhost:8082/swagger-ui.html | http://localhost:8082/v3/api-docs |
-| membership-service | http://localhost:8083/health, `/ready` | http://localhost:8083/swagger-ui.html | http://localhost:8083/v3/api-docs |
-| booking-service | http://localhost:8084/health, `/ready` | http://localhost:8084/swagger-ui.html | http://localhost:8084/v3/api-docs |
-| payment-service | http://localhost:8085/health, `/ready` | http://localhost:8085/swagger-ui.html | http://localhost:8085/v3/api-docs |
-| notification-service | http://localhost:8086/health, `/ready` | http://localhost:8086/swagger-ui.html | http://localhost:8086/v3/api-docs |
-| RabbitMQ Management | http://localhost:15672 (`fitclub_admin`, пароль в `secrets/rabbitmq_admin_password`) | | |
+| Сервис | Порт | Health / Ready | Swagger UI | OpenAPI JSON |
+|---|---|---|---|---|
+| auth-service | 8081 | http://localhost:8081/health, `/ready` | http://localhost:8081/swagger-ui.html | http://localhost:8081/v3/api-docs |
+| schedule-service | 8082 | http://localhost:8082/health, `/ready` | http://localhost:8082/swagger-ui.html | http://localhost:8082/v3/api-docs |
+| membership-service | 8083 | http://localhost:8083/health, `/ready` | http://localhost:8083/swagger-ui.html | http://localhost:8083/v3/api-docs |
+| booking-service | 8084 | http://localhost:8084/health, `/ready` | http://localhost:8084/swagger-ui.html | http://localhost:8084/v3/api-docs |
+| payment-service | 8085 | http://localhost:8085/health, `/ready` | http://localhost:8085/swagger-ui.html | http://localhost:8085/v3/api-docs |
+| notification-service | 8086 | http://localhost:8086/health, `/ready` | http://localhost:8086/swagger-ui.html | http://localhost:8086/v3/api-docs |
 
-- `/health` — liveness процесса.
-- `/ready` — готовность: собственная БД доступна и все миграции применены.
+`/health` — liveness процесса. `/ready` — готовность: собственная БД доступна и миграции применены. От RabbitMQ `/ready` не зависит: без брокера операции продолжают работать через outbox.
 
+## Учётные записи
 
-## Первый администратор
-
-При запуске auth-service создаёт администратора, если его ещё нет:
-
-- email — `admin@fitclub.local` (меняется переменной `FITCLUB_AUTH_INITIAL_ADMIN_EMAIL` в `.env`);
-- пароль — в файле `secrets/auth_initial_admin_password`. Его создаёт генератор секретов; если файла нет, запустите генератор ещё раз.
-
-Посмотреть пароль:
+| Кто | Email | Пароль |
+|---|---|---|
+| Администратор (создаётся auth-service при первом запуске) | `admin@fitclub.local` (переменная `FITCLUB_AUTH_INITIAL_ADMIN_EMAIL`) | `secrets/auth_initial_admin_password` |
+| Тренеры (demo) | `trainer.anna@fitclub.demo`, `trainer.boris@fitclub.demo` | `secrets/demo_users_password` |
+| Клиенты (demo) | `client.elena@fitclub.demo` (абонемент «Стандарт», записана на «Утреннюю йогу»), `client.dmitry@fitclub.demo` (безлимит), `client.olga@fitclub.demo` (без абонемента) | `secrets/demo_users_password` |
 
 ```powershell
 Get-Content secrets\auth_initial_admin_password
+Get-Content secrets\demo_users_password
 ```
 
-## Проверка шага 3 (auth-service)
+Demo-сидер также создаёт тарифы «Старт — 4 посещения», «Стандарт — 8 посещений», «Безлимит» и типы «Йога», «Пилатес», «Функциональный тренинг». Пять занятий публикуются на три дня вперёд **от момента запуска сидера**, одно из них — на одно место. Сидер работает только через публичный API, в базы напрямую не пишет. Новый пользователь регистрируется в UI и получает роль клиента.
 
-Удобнее всего в общем Swagger UI Gateway: http://localhost:8000/swagger-ui.html (в списке справа сверху выберите `auth-service`).
+## Пользовательский сценарий
 
-1. `POST /api/auth/register` — зарегистрируйте пользователя (роль будет `CLIENT`, даже если добавить в тело `"roles":["ADMIN"]`).
-2. `POST /api/auth/login` под `admin@fitclub.local` → скопируйте `access_token` → кнопка **Authorize** → вставьте токен.
-3. `GET /api/admin/users` — список пользователей. `PATCH /api/admin/users/{id}/roles` с `{"roles":["CLIENT","TRAINER"]}` — назначение тренера.
-4. `POST /api/auth/refresh` с `refresh_token` выдаёт новую пару. Повторный refresh **старым** токеном вернёт `401` и отзовёт всю цепочку.
-5. `POST /api/auth/logout` отзывает refresh-токен. Access-токен действует до своего срока (15 минут), см. [docs/security.md](docs/security.md).
+| Роль | Что сделать в UI |
+|---|---|
+| Клиент (Ольга или новая регистрация) | «Тарифы» → «Оформить» → «Оплатить (тест: успешно)» → «Активация абонемента…» → активирован. «Расписание» → «Записаться» (свободные места уменьшаются). «Мой абонемент» — остаток посещений. «Мои записи» → «Отменить запись» (не позже чем за 120 минут до начала, иначе показан срок). «Уведомления» и счётчик в шапке |
+| Тренер (Анна) | «Мои занятия» → «Участники» |
+| Администратор | «Занятия»: тип тренировки, черновик, правка черновика, публикация, отмена с причиной (записи отменяются, посещения возвращаются). «Тарифы клуба»: создание, снятие с продажи. «Пользователи»: поиск и назначение ролей |
 
-Из терминала тело запроса с кириллицей надёжнее передавать файлом в UTF-8: создайте `body.json` в VS Code и выполните:
+Что происходит за кадром: оплата → событие `payment.succeeded` → Membership активирует абонемент → `membership.activated` → уведомление. Запись проверяет право через REST-вызов Booking → Membership и публикует `booking.confirmed`. Сценарии с транзакциями и сбоями — в [docs/flows.md](docs/flows.md).
+
+## Основные endpoint'ы
+
+Все маршруты — через Gateway с `Authorization: Bearer <access_token>`, кроме регистрации, входа и refresh. Полный список с примерами — в [docs/api.md](docs/api.md) и Swagger.
+
+| Сервис | Маршрут | Кто |
+|---|---|---|
+| auth | `POST /api/auth/register`, `/login`, `/refresh`, `/logout`; `GET /api/auth/me` | все |
+| auth | `GET /api/admin/users?role&q`, `PATCH /api/admin/users/{id}/roles` | ADMIN |
+| schedule | `GET /api/training-types`, `GET /api/sessions?from&to`, `GET /api/sessions/{id}` | авторизованный |
+| schedule | `POST /api/training-types`, `POST /api/sessions`, `PATCH /api/sessions/{id}` (черновик), `POST /api/sessions/{id}/publish`, `/cancel` | ADMIN |
+| schedule | `GET /api/sessions/mine` | TRAINER |
+| membership | `GET /api/plans`; `POST/PATCH /api/plans` (ADMIN) | авторизованный |
+| membership | `POST /api/membership-orders` (`Idempotency-Key`), `GET /api/membership-orders/{id}`, `GET /api/memberships/me` | владелец |
+| payment | `POST /api/payments` (`Idempotency-Key`), `GET /api/payments/{id}`; `POST /api/payments/{id}/simulate` (только профиль demo) | владелец |
+| booking | `GET /api/availability?session_id=…` | авторизованный |
+| booking | `POST /api/bookings` (`Idempotency-Key`), `POST /api/bookings/{id}/cancel`, `GET /api/bookings/me`, `GET /api/bookings/usage/me` | владелец |
+| booking | `GET /api/sessions/{id}/bookings` | назначенный TRAINER, ADMIN |
+| notification | `GET /api/notifications?unread`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/{id}/read` | получатель |
+
+Ошибки во всех сервисах — `application/problem+json` с полями `code` и `request_id`. Внутренние маршруты `/internal/**` через Gateway недоступны (404) и требуют `X-Service-Token` своего направления.
+
+Пример из терминала (тело с кириллицей надёжнее передавать файлом в UTF-8):
 
 ```powershell
-curl.exe -s -X POST http://localhost:8081/api/auth/register -H "Content-Type: application/json" --data-binary "@body.json"
-```
-
-## Проверка шага 2
-
-Ответ без токена: `401` в формате `application/problem+json` с `request_id`.
-
-```bash
-curl -i http://localhost:8084/api/bookings/me -H "X-Request-ID: demo-request-0001"
-```
-
-Внутренний маршрут без служебного токена: `401 INVALID_SERVICE_CREDENTIAL`.
-
-```bash
-curl http://localhost:8083/internal/memberships/eligibility
-```
-
-JSON-лог этого запроса (`timestamp`, `service`, `level`, `request_id`, `message`):
-
-```bash
-docker compose logs booking-service
-```
-
-Каждый сервис применил миграции под собственной ролью:
-
-```bash
-docker compose exec postgres psql -U postgres -d booking_db -c "select version, description, installed_by from flyway_schema_history"
-```
-
-`/ready` падает при потере БД, а `/health` остаётся `UP`. Остановите PostgreSQL:
-
-```bash
-docker compose stop postgres
-```
-
-Подождите 5–10 секунд и проверьте оба адреса: `/ready` вернёт `503`, `/health` — `200`.
-
-```bash
-curl -i http://localhost:8081/ready
-```
-
-```bash
-curl -i http://localhost:8081/health
-```
-
-Верните PostgreSQL:
-
-```bash
-docker compose start postgres
+curl.exe -s -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" --data-binary "@login.json"
 ```
 
 ## Тесты
 
-Модульные и архитектурные тесты (ArchUnit) без Docker:
-
-Windows PowerShell:
-
-```powershell
-.\mvnw.cmd test
-```
-
-Bash:
-
-```bash
-./mvnw test
-```
-
-Всё вместе с интеграционными тестами (`*IT`, настоящий PostgreSQL через Testcontainers, нужен запущенный Docker Desktop):
+Модульные, архитектурные и интеграционные тесты всех модулей. Нужен запущенный Docker Desktop: Testcontainers поднимает PostgreSQL и RabbitMQ сам.
 
 ```powershell
 .\mvnw.cmd verify
@@ -220,7 +230,41 @@ Bash:
 ./mvnw verify
 ```
 
-Подробные результаты последнего прогона — в [docs/progress.md](docs/progress.md).
+Только модульные и архитектурные, без Docker: `.\mvnw.cmd test`.
+
+Сквозные проверки через Gateway. Скрипт поднимает **изолированный** стенд `fitclub-e2e` (свои контейнеры, volumes и порты 18000/18080), запускает `tests/e2e` и останавливает стенд. Данные основного стенда не меняются:
+
+```powershell
+.\tests\e2e\run-e2e.ps1
+```
+
+```bash
+sh tests/e2e/run-e2e.sh
+```
+
+Последний результат: `mvnw verify` — 270 тестов, 0 падений; E2E — 9 тестов, 0 падений. Что именно проверяется (конкурентность, повторы событий, сбои) — в [docs/testing.md](docs/testing.md).
+
+## Сценарии сбоев вручную
+
+| Команда | Что увидеть |
+|---|---|
+| `docker compose stop notification-service` | Запись в UI проходит, раздел «Уведомления» — «Сервис временно недоступен». После `docker compose start notification-service` уведомление появляется: событие ждало в очереди |
+| `docker compose stop membership-service` | «Записаться» → «Сервис временно недоступен» (503), место не занято. После запуска запись проходит |
+| `docker compose stop rabbitmq` | Тестовая оплата проходит, UI показывает «абонемент ещё активируется». Событие ждёт в `outbox_events` payment_db. После `docker compose start rabbitmq` абонемент активируется один раз |
+| `docker compose stop gateway` | Страница UI открывается, API отвечает `503 DEPENDENCY_UNAVAILABLE` |
+| `docker compose stop postgres` | Через 5–10 с `/ready` сервисов → 503, `/health` → 200 |
+
+Неотправленные события и очереди:
+
+```bash
+docker compose exec postgres psql -U postgres -d payment_db -c "select event_type, published_at, attempts from outbox_events order by occurred_at desc limit 5"
+```
+
+```bash
+docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
+```
+
+Почему система ведёт себя именно так — в [docs/defense.md](docs/defense.md).
 
 ## Запуск сервиса из VS Code или терминала
 
@@ -242,236 +286,56 @@ Bash:
 
 Адрес БД любого сервиса меняется без правки кода, переменной `FITCLUB_DB_URL`, например `jdbc:postgresql://other-host:5432/auth_db`.
 
-## Проверка шага 4 (API Gateway)
+## Логи, остановка, пересборка одного сервиса
 
-Запрос без токена отклоняет сам Gateway: `401` problem+json.
-
-```bash
-curl -i http://localhost:8000/api/plans
-```
-
-Внутренние маршруты снаружи не существуют: `404`.
+Логи одного сервиса в реальном времени (JSON: `timestamp`, `service`, `level`, `request_id`, `message`):
 
 ```bash
-curl -i http://localhost:8000/internal/users/1/trainer-status
+docker compose logs -f booking-service
 ```
 
-Попытка обойти это через `..`: `400`.
-
-```bash
-curl -i --path-as-is "http://localhost:8000/api/auth/../../internal/users/1/trainer-status"
-```
-
-Недоступный сервис даёт контролируемый `503 DEPENDENCY_UNAVAILABLE`, а не зависание. Остановите сервис, выполните любой запрос к `/api/notifications` с токеном (например, через Swagger UI) и запустите сервис обратно:
-
-```bash
-docker compose stop notification-service
-```
-
-```bash
-docker compose start notification-service
-```
-
-Один `request_id` виден в логах Gateway и сервиса:
+Один запрос во всех сервисах — по `X-Request-ID`:
 
 ```bash
 curl -s http://localhost:8000/api/plans -H "X-Request-ID: my-trace-000001"
 ```
 
-```bash
-docker compose logs gateway auth-service membership-service | findstr my-trace-000001
+```powershell
+docker compose logs gateway membership-service | findstr my-trace-000001
 ```
 
 В Bash вместо `findstr` используйте `grep`.
 
-## Проверка шага 5 (schedule-service и события)
-
-В общем Swagger UI (http://localhost:8000/swagger-ui.html) выберите `schedule-service`, авторизуйтесь токеном администратора и выполните:
-
-1. `POST /api/training-types` с `{"name":"Пилатес"}`.
-2. `POST /api/sessions` с `training_type_id`, `trainer_id` (id пользователя с ролью TRAINER из шага 3), временем в будущем и `capacity`. В ответе `status = DRAFT` и `trainer_display_name`: имя пришло из auth-service.
-3. `POST /api/sessions/{id}/publish` переводит занятие в `PUBLISHED`, `version = 1`. Попытка `PATCH` после этого вернёт `409 SESSION_NOT_EDITABLE`.
-
-Событие лежит в очереди booking-service, который появится на шаге 8, и не теряется:
-
-```bash
-docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
-```
-
-Строка outbox отправлена:
-
-```bash
-docker compose exec postgres psql -U postgres -d schedule_db -c "select event_type, aggregate_version, published_at, attempts from outbox_events"
-```
-
-Состояние доставки событий — отдельно от готовности HTTP:
-
-```bash
-curl http://localhost:8082/actuator/health/messaging
-```
-
-Если остановить брокер (`docker compose stop rabbitmq`), публикация занятия всё равно пройдёт: событие сохранится в outbox. `/ready` останется `200`, а `messaging` станет `DOWN`. После `docker compose start rabbitmq` событие будет отправлено.
-
-## Проверка шага 6 (membership-service)
-
-В общем Swagger UI выберите `membership-service`:
-
-1. Под ADMIN: `POST /api/plans` с `{"name":"8 посещений в месяц","duration_days":30,"visit_limit":8,"price_minor":45000}` и безлимитный тариф без `visit_limit`.
-2. Под клиентом: `POST /api/membership-orders` с `{"plan_id":"…"}` и заголовком `Idempotency-Key`. Подойдёт любой UUID, например из https://www.uuidgenerator.net. Цена в ответе — из тарифа, даже если добавить в тело `"price_minor":1`.
-3. Повторите запрос с тем же ключом: тот же `id` и заголовок `Idempotent-Replayed: true`. Тот же ключ с другим тарифом даёт `409 IDEMPOTENCY_CONFLICT`.
-4. Новый ключ, но другой тариф, пока первый заказ не оплачен: `409 PENDING_ORDER_EXISTS`. Оплата появится на шаге 7.
-
-Внутренний API доступен только с токеном своего направления. Через Gateway он закрыт:
-
-```powershell
-curl.exe -s http://localhost:8083/internal/membership-orders/<order_id>/payment-details -H "X-Service-Token: $(Get-Content secrets\service_token_payment_to_membership)"
-```
-
-## Проверка шага 7 (оплата и активация абонемента)
-
-Тестовая оплата — demo-возможность. Включите профиль demo: создайте файл `.env` рядом с `docker-compose.yml` со строкой
-
-```
-FITCLUB_PROFILES=docker,demo
-```
-
-и перезапустите сервисы:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-```
-
-Дальше в общем Swagger UI под **клиентом**:
-
-1. `membership-service` → `POST /api/membership-orders` с `{"plan_id":"…"}` и заголовком `Idempotency-Key`. Скопируйте `id` заказа.
-2. `payment-service` → `POST /api/payments` с `{"membership_order_id":"…"}` и новым `Idempotency-Key`: платёж `PENDING`, сумма из тарифа.
-3. `POST /api/payments/{id}/simulate` с `{"outcome":"SUCCESS"}`: платёж `SUCCEEDED`. Это тестовая оплата, деньги не списываются.
-4. `membership-service` → `GET /api/memberships/me`: через долю секунды абонемент `ACTIVE`. Он появляется асинхронно, по событию `PaymentSucceeded`.
-
-С `{"outcome":"DECLINE"}` заказ станет `PAYMENT_FAILED`, абонемента не будет, и можно оформить новый заказ.
-
-Путь события виден в логах по одному `correlation_id`:
-
-```bash
-docker compose logs payment-service membership-service | findstr "PaymentSucceeded MembershipActivated"
-```
-
-Очереди и DLQ (`messages` в `.dlq` должно быть 0):
-
-```bash
-docker compose exec rabbitmq rabbitmqctl list_queues -p fitclub name messages
-```
-
-## Проверка шага 8 (запись на занятия)
-
-Нужны опубликованное будущее занятие (шаг 5) и клиент с активным абонементом (шаг 7). В общем Swagger UI под клиентом выберите `booking-service`:
-
-1. `GET /api/availability?session_id=…` — свободные места (`state: OPEN`).
-2. `POST /api/bookings` с `{"session_id":"…"}` и `Idempotency-Key`: запись `CONFIRMED`, свободных мест стало меньше.
-3. `GET /api/bookings/usage/me` — использовано и осталось посещений.
-4. Повторная запись на то же занятие — `409 ALREADY_BOOKED`. На занятие без мест — `SESSION_FULL`. Без абонемента — `MEMBERSHIP_NOT_VALID`.
-5. Под тренером этого занятия: `GET /api/sessions/{id}/bookings` — участники по именам. Под клиентом — `403`.
-6. `POST /api/bookings/{id}/cancel` — отмена: место и посещение возвращаются. Позже чем за 120 минут до начала — `CANCELLATION_WINDOW_CLOSED`.
-7. Под ADMIN в `schedule-service` `POST /api/sessions/{id}/cancel`: через долю секунды все записи на это занятие отменены (`cancel_reason: SESSION_CANCELLED`), посещения возвращены.
-
-Окно отмены настраивается переменной `CANCEL_BEFORE_MINUTES` (по умолчанию 120).
-
-## Проверка шага 9 (уведомления)
-
-В общем Swagger UI под клиентом выберите `notification-service`:
-
-1. `GET /api/notifications` — уведомления об активации абонемента, записи и отмене (время в тексте — по Кишинёву).
-2. `GET /api/notifications/unread-count`, затем `PATCH /api/notifications/{id}/read`: счётчик уменьшается. Чужое уведомление — `404`.
-
-Notification не нужен для записи на занятие, и уведомления не теряются, пока он выключен:
-
-```bash
-docker compose stop notification-service
-```
-
-Запишитесь на занятие (booking-service), затем:
-
-```bash
-docker compose start notification-service
-```
-
-Через несколько секунд подтверждение записи появится в `GET /api/notifications`.
-
-Напоминание приходит за `REMINDER_LEAD_MINUTES` (по умолчанию 60) минут до начала. Задачи видны в БД и переживают перезапуск:
-
-```bash
-docker compose exec postgres psql -U postgres -d notification_db -c "select status, remind_at, starts_at from reminder_jobs"
-```
-
-## Проверка шага 10 (интерфейс и demo-данные)
-
-**1. Запустить стенд в demo-режиме.** Профиль `demo` включает тестовое завершение оплаты (`POST /api/payments/{id}/simulate`), без него UI честно сообщит, что тестовая оплата выключена:
-
-```bash
-FITCLUB_PROFILES=docker,demo docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-```
-
-В PowerShell переменная задаётся отдельной командой: `$env:FITCLUB_PROFILES="docker,demo"`, затем та же команда `docker compose ...`. Можно и раскомментировать строку `FITCLUB_PROFILES` в `.env`.
-
-**2. Заполнить demo-данными** (только по явной команде, повторный запуск ничего не дублирует):
-
-```bash
-docker compose --profile demo run --rm demo-seed
-```
-
-Сидер ходит только в публичный API через Gateway, как обычный клиент и администратор, а не пишет в базы: правила проверяет каждый сервис, события публикуются как обычно. Создаются:
-- тренеры `trainer.anna@fitclub.demo`, `trainer.boris@fitclub.demo` и клиенты `client.elena@fitclub.demo`, `client.dmitry@fitclub.demo`, `client.olga@fitclub.demo`. Общий пароль лежит в `secrets/demo_users_password` (`Get-Content secrets\demo_users_password`) и на экран не выводится;
-- тарифы «Старт — 4 посещения», «Стандарт — 8 посещений», «Безлимит»; типы «Йога», «Пилатес», «Функциональный тренинг»;
-- пять опубликованных занятий на три дня, начиная с завтрашнего (одно — на одно место, для сценария «мест нет»);
-- Елене и Дмитрию — абонементы через заказ и тестовую оплату; Елена записана на «Утреннюю йогу». У Ольги абонемента нет: на ней удобно показать покупку.
-
-**3. Открыть http://localhost:8080.** Это публичный вход: Nginx раздаёт UI и проксирует `/api` в Gateway с того же origin. Через него же доступен Swagger: http://localhost:8080/swagger-ui.html.
-
-| Роль | Что проверить |
-|---|---|
-| Клиент (Ольга или новая регистрация) | «Тарифы» → «Оформить» → «Оплатить (тест: успешно)» → «Активация абонемента…» → абонемент активирован; «Расписание» → «Записаться»; «Мои записи» → «Отменить запись» или срок, до которого можно отменить; «Уведомления» и счётчик в шапке |
-| Тренер (Анна) | «Мои занятия» → «Участники» |
-| Администратор | «Занятия»: тип тренировки, черновик, правка черновика, публикация, отмена с причиной. «Тарифы клуба»: создание, снятие с продажи. «Пользователи»: поиск и роли |
-
-Что важно для защиты:
-- токены хранятся только в памяти вкладки. `localStorage`, `sessionStorage` и cookie пусты, после перезагрузки страницы нужен вход. Refresh выполняется автоматически, один на все параллельные запросы;
-- кнопка блокируется на время запроса, повторный клик не создаёт второй запрос. Для оплаты и записи UI отправляет `Idempotency-Key`; при сетевой ошибке повтор идёт с тем же ключом;
-- активация абонемента асинхронная (событие `payment.succeeded`), поэтому UI опрашивает `GET /api/memberships/me` раз в секунду не дольше 20 секунд. Счётчик уведомлений обновляется раз в 30 секунд и только при видимой вкладке;
-- при остановленном Gateway (`docker compose stop gateway`) страница открывается, а `/api` отвечает `503` problem+json `DEPENDENCY_UNAVAILABLE`, и UI показывает понятное сообщение.
-
-## Логи, остановка, пересборка одного сервиса
-
-Логи одного сервиса в реальном времени:
-
-```bash
-docker compose logs -f auth-service
-```
-
 Пересобрать и перезапустить только один сервис:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build auth-service
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build booking-service
 ```
 
-Остановить всё без потери данных:
+Остановить всё без потери данных и запустить снова:
 
 ```bash
-docker compose down
+docker compose stop
 ```
 
-Данные сохраняются в Docker volumes `fitclub_postgres-data` и `fitclub_rabbitmq-data`. **Не используйте `docker compose down -v`**, если не хотите удалить все данные.
+```bash
+docker compose start
+```
+
+`docker compose down` удаляет контейнеры, но сохраняет данные. Данные лежат в Docker volumes `fitclub_postgres-data` и `fitclub_rabbitmq-data`. **Не используйте `docker compose down -v`**, если не хотите удалить все данные.
 
 ## Типовые неисправности
 
 | Симптом | Причина и решение |
 |---|---|
-| `secret file ... not found` при `docker compose up` | Секреты не сгенерированы (или появился новый, например `demo_users_password` на шаге 10). Запустите генератор из шага 1 «Первого запуска»: он добавит только недостающие файлы |
+| `secret file ... not found` при `docker compose up` | Секреты не сгенерированы (или добавился новый, например `demo_users_password`). Запустите генератор из шага 1: он добавит только недостающие файлы |
+| `failed to connect to the docker API` / `dockerDesktopLinuxEngine` | Docker Desktop не запущен. Запустите его и дождитесь статуса Engine running |
+| `port is already allocated` | Порт занят, например локальным PostgreSQL или сервисом из IDE. Задайте другой в `.env` (`POSTGRES_HOST_PORT=15432`, `UI_HOST_PORT=8090`) или остановите конфликтующий процесс |
+| Сервис долго `unhealthy` / перезапускается | `docker compose logs <service>`. Частая причина — БД недоступна или `postgres-bootstrap` завершился с ошибкой |
 | В UI после оплаты: «Тестовая оплата выключена» | Стенд запущен без профиля demo. Перезапустите с `FITCLUB_PROFILES=docker,demo` |
-| UI не открывается, `docker compose ps` без `frontend` | Образ UI не собран: `docker compose up -d --build frontend` |
-| `port is already allocated` | Порт занят, например локальным PostgreSQL или сервисом из IDE. Задайте другой в `.env` (`POSTGRES_HOST_PORT=15432`) или остановите конфликтующий процесс |
-| Сервис в `docker compose ps` долго `unhealthy` / перезапускается | Смотрите `docker compose logs <service>`. Частая причина — БД недоступна или `postgres-bootstrap` завершился с ошибкой |
+| Абонемент «ещё активируется» дольше минуты | Проверьте RabbitMQ (`docker compose ps rabbitmq`) и неотправленные события в `outbox_events` (см. «Сценарии сбоев») |
 | При запуске из IDE: `Could not resolve placeholder 'db_auth_password'` | Рабочий каталог не `lab2`, и сервис не видит `secrets/`. Используйте `.vscode/launch.json` или задайте `FITCLUB_SECRETS_DIR` с абсолютным путём |
-| `mvnw verify`: ошибки Testcontainers `Could not find a valid Docker environment` | Docker Desktop не запущен |
-| `postgres-bootstrap` упал с `missing secret` | Удалены отдельные файлы в `secrets/`. Перезапустите генератор, он создаст недостающие |
+| `mvnw verify`: `Could not find a valid Docker environment` | Docker Desktop не запущен |
 | `bootstrap-databases.sh: not found` / `\r` в ошибке | Скрипт сохранён с CRLF. В репозитории `.gitattributes` фиксирует LF. Выполните `git add --renormalize .` или пересохраните файл с LF |
 | RabbitMQ не стартует после ручной правки `secrets/rabbitmq_users.json` | Удалите этот файл и запустите генератор снова. Файл будет пересоздан из паролей |
+| Русский текст в выводе `.ps1` искажён | Скрипт сохранён без BOM. Файлы `.ps1` в репозитории — UTF-8 с BOM, сохраняйте их так же |

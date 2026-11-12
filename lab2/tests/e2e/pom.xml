@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.fitclub</groupId>
+        <artifactId>fitclub-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>fitclub-e2e</artifactId>
+    <name>FitClub :: end-to-end</name>
+    <description>
+        Сквозные проверки через API Gateway на запущенном Docker Compose стенде: полный пользовательский
+        сценарий, конкурентная запись и сценарии сбоев (остановка Notification, Membership, RabbitMQ).
+        Не зависит от кода сервисов: только HTTP, как внешний клиент.
+    </description>
+
+    <properties>
+        <!-- Адрес Gateway и имя Compose-проекта изолированного стенда (см. run-e2e.ps1 / run-e2e.sh) -->
+        <e2e.baseUrl>http://localhost:18000</e2e.baseUrl>
+        <e2e.composeProject>fitclub-e2e</e2e.composeProject>
+        <e2e.adminEmail>admin@fitclub.local</e2e.adminEmail>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!-- Сценарии меняют общий стенд (останавливают контейнеры) — выполняются последовательно -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
+                    <runOrder>alphabetical</runOrder>
+                    <systemPropertyVariables>
+                        <e2e.baseUrl>${e2e.baseUrl}</e2e.baseUrl>
+                        <e2e.composeProject>${e2e.composeProject}</e2e.composeProject>
+                        <e2e.adminEmail>${e2e.adminEmail}</e2e.adminEmail>
+                        <e2e.projectDir>${maven.multiModuleProjectDirectory}</e2e.projectDir>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

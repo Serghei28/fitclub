@@ -1,6 +1,7 @@
 package com.fitclub.common.config;
 
 import java.time.Clock;
+import java.time.Duration;
 
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -23,7 +24,9 @@ public class FitClubClockAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     Clock clock() {
-        return Clock.systemUTC();
+        // Точность PostgreSQL TIMESTAMPTZ — микросекунды. Часы с тем же шагом дают одинаковое время
+        // в ответе сразу после операции и при последующем чтении из БД (без «лишних» наносекунд).
+        return Clock.tick(Clock.systemUTC(), Duration.ofNanos(1_000));
     }
 
     /** Idempotency-Key для сервисов, у которых есть таблица idempotency_records. */

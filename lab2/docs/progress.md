@@ -16,27 +16,32 @@
 | 8 | booking-service | Проекция занятий, eligibility, блокировки, учёт лимита, отмена и граница окна, обработка `SessionCancelled`, `Idempotency-Key`; конкурентные тесты | ✅ готов и проверен |
 | 9 | notification-service | Уведомления, прочтение, сохраняемые напоминания, `NotificationChannel`, tombstone, `Clock`; тесты повторов и восстановления | ✅ готов и проверен |
 | 10 | UI и финальный Compose | Статический UI на Nginx (все роли), dev-override, demo-профиль и seeding | ✅ готов и проверен |
-| 11 | Сквозные проверки и документация для защиты | E2E через Gateway, сценарии сбоев, `solid.md`, `security.md`, `flows.md`, `testing.md`, `requirements-matrix.md`, `defense.md`, финальный README | ⏳ |
+| 11 | Сквозные проверки и документация для защиты | E2E через Gateway, сценарии сбоев, `solid.md`, `security.md`, `flows.md`, `testing.md`, `requirements-matrix.md`, `defense.md`, финальный README | ✅ готов и проверен |
 
 ## Текущее состояние
 
-**Шаг 10 выполнен** (04.11.2026). Есть интерфейс для всех ролей и повторяемое demo-наполнение.
+**Шаг 11 выполнен** (12.11.2026). Все шаги плана завершены.
 
 Что появилось:
-- `frontend/`: Nginx 1.30.6 раздаёт статику и проксирует `/api`, Swagger UI и `/docs/*` в Gateway с того же origin. Заголовки CSP (`script-src 'self'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`; `/internal/` → 404; недоступный Gateway → `503` problem+json;
-- UI на ES-модулях без сборки и фреймворков (`api.js`, `time.js`, `dom.js`, `app.js`). Экраны клиента (расписание с местами, тарифы и тестовая оплата, абонемент с остатком посещений, записи с отменой, уведомления), тренера (занятия и участники) и администратора (типы и занятия, тарифы, пользователи и роли);
-- токены только в памяти вкладки, общий refresh, `Idempotency-Key` на намерение, блокировка кнопок, понятные тексты ошибок по `code`, время по Кишинёву;
-- `infrastructure/demo/seed.py` и сервис `demo-seed` (Compose-профиль `demo`, запуск только явный); секрет `demo_users_password` в генераторе;
-- сервис `frontend` в Compose (`127.0.0.1:${UI_HOST_PORT:-8080}`), `frontend/` убран из `.dockerignore`.
+- `tests/e2e` — Maven-модуль (профиль `e2e`, в обычный `verify` не входит). Работает как внешний клиент через Gateway: JDK `HttpClient`, Jackson, Awaitility. Сценарии:
+  - `FullJourneyIT` — полный путь абонемент → оплата → запись → уведомления → повтор оплаты → отмена;
+  - `AccessControlIT` — аутентификация, роли, владение;
+  - `ConcurrencyIT` — последнее место, последнее посещение;
+  - `FailureScenariosIT` — остановка Notification, Membership и RabbitMQ;
+- `tests/e2e/run-e2e.ps1` / `run-e2e.sh` — изолированный Compose-проект `fitclub-e2e` (порты 18000/18080/15432/15673/15674, свои volumes) с профилем `docker,demo`;
+- документы: `solid.md`, `testing.md`, `requirements-matrix.md`, `defense.md`; финальный README (сервисы, стек и причины выбора, запуск, учётные записи, сценарий, endpoint'ы, тесты, сбои, неисправности).
 
-Проверки (Docker, `docker,demo`, встроенный браузер):
-- `demo-seed`: создал 5 пользователей, 3 тарифа, 2 недостающих типа, 5 занятий, 2 абонемента через тестовую оплату и запись. **Повторный запуск ничего не продублировал**;
-- новый клиент через UI: регистрация → вход → тариф → тестовая оплата → «Активация абонемента…» → активирован; запись на занятие на одно место → «мест нет / вы записаны»; отмена → «отменена вами», посещение вернулось (4 из 4); три уведомления, отметка прочтения уменьшила счётчик 3 → 2; неверный пароль → «Неверный email или пароль.»;
-- `localStorage`, `sessionStorage`, `document.cookie` пусты; ошибок в консоли нет;
-- Gateway остановлен → `/` отдаёт 200, `/api/plans` → `503 DEPENDENCY_UNAVAILABLE`; `/internal/x` → 404; `/swagger-ui.html` и `/docs/booking/v3/api-docs` через Nginx — 200;
-- найден и исправлен дефект: `display: flex` у `.row`/`.nav` перекрывал атрибут `hidden` (правило `[hidden] { display: none !important }`).
-- экраны тренера и администратора используют те же endpoint'ы, что проверены на шагах 3–9, но вручную в браузере на этом шаге не пройдены.
+Исправлено по результатам проверок:
+- общий `Clock` переведён на шаг 1 мкс (`Clock.tick`): `completed_at` в ответе на оплату отличался от того же значения при чтении из БД (наносекунды против микросекунд PostgreSQL);
+- healthcheck `frontend` — `127.0.0.1` вместо `localhost` (в alpine `localhost` резолвился в IPv6, Nginx слушает IPv4; контейнер был `unhealthy`);
+- `.ps1`-скрипты сохранены в UTF-8 с BOM: Windows PowerShell 5.1 искажал русский текст.
 
-## Ближайшая задача
+Проверки:
+- `mvnw verify` — **BUILD SUCCESS, 270 тестов, 0 падений** (common 28, auth 52, schedule 45, membership 40, booking 32, payment 31, notification 25, gateway 17);
+- `tests/e2e/run-e2e.ps1` — **BUILD SUCCESS, 9 тестов, 0 падений**: стенд собран с нуля, все контейнеры `healthy` (`--wait`), после тестов остановлен.
 
-Шаг 11: E2E через Gateway, сценарии сбоев (остановка Membership, RabbitMQ, Notification), `solid.md`, `testing.md`, `requirements-matrix.md`, `defense.md`, финальный README.
+## Что можно улучшить после защиты
+
+- Браузерные автотесты UI (сейчас UI проверен вручную).
+- Немедленный отзыв access JWT (сейчас живёт до `exp`, ≤ 15 минут) — при необходимости через короткий срок жизни или список отзыва.
+- Метрики и трассировка (сейчас корреляция по `request_id` в JSON-логах).

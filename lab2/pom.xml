@@ -150,4 +150,15 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!-- Сквозные проверки через Gateway на запущенном стенде: ./mvnw -Pe2e -pl tests/e2e verify
+                 (обычно через tests/e2e/run-e2e.ps1 / run-e2e.sh, которые поднимают изолированный стенд) -->
+            <id>e2e</id>
+            <modules>
+                <module>tests/e2e</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

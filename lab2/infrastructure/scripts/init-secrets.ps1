@@ -1,4 +1,4 @@
-# Генерация локальных секретов FitClub (Windows PowerShell).
+﻿# Генерация локальных секретов FitClub (Windows PowerShell).
 # Запуск из каталога lab2:  .\infrastructure\scripts\init-secrets.ps1
 # Существующие секреты не перезаписываются, значения не выводятся.
 $ErrorActionPreference = 'Stop'
