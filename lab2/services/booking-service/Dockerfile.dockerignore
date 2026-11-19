@@ -1,0 +1,18 @@
+# Контекст сборки образа booking-service (заменяет корневой .dockerignore для этого Dockerfile).
+# Принцип «всё запрещено, кроме нужного»: меньше контекст, нет секретов и чужих исходников,
+# а правка другого сервиса не сбрасывает кэш слоёв этого образа.
+**
+
+# Maven Wrapper и родительский POM (он перечисляет все модули, поэтому нужны все POM-файлы)
+!mvnw
+!pom.xml
+!.mvn/wrapper/maven-wrapper.properties
+!libs/*/pom.xml
+!services/*/pom.xml
+!gateway/pom.xml
+
+# Исходники: общие модули и сам booking-service
+!libs/fitclub-common/src/main/
+!libs/fitclub-messaging/src/main/
+!libs/fitclub-test-support/src/main/
+!services/booking-service/src/main/

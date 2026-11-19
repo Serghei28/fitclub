@@ -1,0 +1,4 @@
+# Контекст сборки образа frontend: только шаблон конфигурации Nginx и статические файлы
+**
+!frontend/default.conf.template
+!frontend/static/
