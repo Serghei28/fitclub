@@ -10,6 +10,8 @@
 Шесть независимых Spring Boot сервисов, API Gateway, RabbitMQ, PostgreSQL и небольшой веб-интерфейс на Nginx. Всё запускается одной командой Docker Compose.
 
 > **Состояние: все 11 шагов выполнены.** `mvnw verify` — 270 тестов, сквозные проверки через Gateway (`tests/e2e`) — 9 сценариев, включая остановку Notification, Membership и RabbitMQ. Результаты — в [docs/testing.md](docs/testing.md), материалы для защиты — в [docs/defense.md](docs/defense.md).
+>
+> **Лабораторная 3** (оптимизированные образы, Kubernetes, Minikube) — в [../lab3/README.md](../lab3/README.md). Образы и Compose из этого каталога используются там без изменений.
 
 ## Документация
 
@@ -55,7 +57,7 @@ lab2/
 ├── services/<name>-service/            auth, schedule, membership, booking, payment, notification:
 │                                       pom.xml, Dockerfile, api/application/domain/infrastructure, миграции, тесты
 ├── gateway/                            API Gateway (Spring Cloud Gateway, WebFlux)
-├── frontend/                           UI: nginx.conf, Dockerfile, static/ (HTML, CSS, ES-модули JS без сборки)
+├── frontend/                           UI: default.conf.template (Nginx), Dockerfile, static/ (HTML, CSS, ES-модули JS без сборки)
 ├── infrastructure/                     bootstrap БД и ролей, топология RabbitMQ, генератор секретов, demo/seed.py
 ├── tests/e2e/                          сквозные проверки через Gateway и скрипты изолированного стенда
 └── docs/

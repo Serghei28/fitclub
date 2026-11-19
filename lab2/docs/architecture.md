@@ -116,7 +116,7 @@ flowchart TB
 
 | Компонент | Порт в контейнере | Порт на машине |
 |---|---|---|
-| frontend (Nginx) | 80 | `8080` (публичный адрес UI) |
+| frontend (Nginx, без root) | 8080 | `8080` (публичный адрес UI) |
 | gateway | 8080 | `127.0.0.1:8000` (API и общий Swagger UI) |
 | auth / schedule / membership / booking / payment / notification | 8080 | dev-override: 8081…8086 |
 | PostgreSQL | 5432 | `127.0.0.1:5432` |
