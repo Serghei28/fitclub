@@ -1,0 +1,101 @@
+# Собственная конфигурация каждого сервиса: адрес его БД и параметры бизнес-правил.
+# Порядок envFrom в Deployment: сначала fitclub-common, затем <service>-config (значения из него главнее).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/auth_db
+  FITCLUB_DB_USER: auth_user
+  # Email первого администратора (пароль — в Secret auth-service-secrets)
+  FITCLUB_AUTH_INITIAL_ADMIN_EMAIL: admin@fitclub.local
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schedule-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: schedule-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/schedule_db
+  FITCLUB_DB_USER: schedule_user
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: membership-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: membership-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/membership_db
+  FITCLUB_DB_USER: membership_user
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: booking-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: booking-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/booking_db
+  FITCLUB_DB_USER: booking_user
+  # Отмена записи — не позже чем за столько минут до начала занятия
+  CANCEL_BEFORE_MINUTES: "120"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: payment-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/payment_db
+  FITCLUB_DB_USER: payment_user
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notification-service-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Своя логическая БД сервиса на сервере postgres (Service postgres:5432)
+  FITCLUB_DB_URL: jdbc:postgresql://postgres:5432/notification_db
+  FITCLUB_DB_USER: notification_user
+  # Напоминание — за столько минут до начала занятия
+  REMINDER_LEAD_MINUTES: "60"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: fitclub
+data:
+  # Профиль Gateway: только docker (demo-возможностей у Gateway нет)
+  SPRING_PROFILES_ACTIVE: docker
+  # Таймауты проксирования: недоступный сервис — 503, медленный — 504, а не зависший запрос
+  FITCLUB_GATEWAY_CONNECT_TIMEOUT_MS: "2000"
+  FITCLUB_GATEWAY_RESPONSE_TIMEOUT: 10s

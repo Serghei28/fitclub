@@ -1,0 +1,19 @@
+# booking-service: внутренний адрес http://booking-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=booking-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service
+  namespace: fitclub
+  labels:
+    app: booking-service
+    app.kubernetes.io/name: booking-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: booking-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

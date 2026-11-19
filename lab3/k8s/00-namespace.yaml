@@ -1,0 +1,9 @@
+# Все ресурсы FitClub — в отдельном пространстве имён: их легко посмотреть (kubectl get all -n fitclub)
+# и удалить целиком, не затрагивая остальное в кластере.
+# Имя файла начинается с 00-: kubectl apply -R -f k8s/ создаёт namespace раньше остальных ресурсов.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fitclub
+  labels:
+    app.kubernetes.io/part-of: fitclub

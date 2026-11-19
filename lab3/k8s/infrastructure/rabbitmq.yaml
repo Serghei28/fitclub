@@ -1,0 +1,140 @@
+# RabbitMQ 4.1: брокер событий. Топология (exchange fitclub.events, очереди сервисов, DLQ) и пользователи
+# импортируются при каждом старте из каталога definitions.d: топология — из ConfigMap rabbitmq-config,
+# пользователи с хэшами паролей — из Secret rabbitmq-secrets (projected volume объединяет их в один каталог).
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: fitclub
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: broker
+spec:
+  clusterIP: None
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: fitclub
+  labels:
+    app: rabbitmq
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: broker
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        app.kubernetes.io/name: rabbitmq
+        app.kubernetes.io/part-of: fitclub
+        app.kubernetes.io/component: broker
+    spec:
+      automountServiceAccountToken: false
+      # Без этого в контейнер попали бы переменные вида RABBITMQ_PORT=tcp://... от одноимённого Service
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:4.1.8-management-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: management
+              containerPort: 15672
+          resources:
+            # Замер в Docker: ~130 МиБ; брокер сам ограничивает память долей от лимита (watermark)
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_running"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "status"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+            - name: config
+              mountPath: /etc/rabbitmq/conf.d/90-fitclub.conf
+              subPath: rabbitmq.conf
+              readOnly: true
+            # Файлы по одному через subPath, а не каталогом: том ConfigMap/Secret содержит служебные
+            # подкаталоги (..data, ..<время>) для атомарного обновления, а RabbitMQ импортирует
+            # определения из всех записей каталога и падает на подкаталоге (eisdir)
+            - name: definitions
+              mountPath: /etc/rabbitmq/definitions.d/00-users.json
+              subPath: 00-users.json
+              readOnly: true
+            - name: definitions
+              mountPath: /etc/rabbitmq/definitions.d/10-topology.json
+              subPath: 10-topology.json
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: rabbitmq-config
+            items:
+              - key: rabbitmq.conf
+                path: rabbitmq.conf
+        - name: definitions
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: rabbitmq-secrets
+                  items:
+                    - key: rabbitmq_users.json
+                      path: 00-users.json
+              - configMap:
+                  name: rabbitmq-config
+                  items:
+                    - key: topology.json
+                      path: 10-topology.json
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

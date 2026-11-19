@@ -1,0 +1,19 @@
+# notification-service: внутренний адрес http://notification-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=notification-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: fitclub
+  labels:
+    app: notification-service
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

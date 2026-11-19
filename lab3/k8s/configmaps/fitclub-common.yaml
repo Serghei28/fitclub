@@ -1,0 +1,34 @@
+# Общая конфигурация бизнес-сервисов и Gateway. Подключается через envFrom во всех Deployment.
+# В образах нет адресов и паролей: адреса — здесь, пароли и ключи — в Secret.
+# Внутри кластера сервисы обращаются друг к другу по DNS-именам Kubernetes Service, а не через localhost.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fitclub-common
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/part-of: fitclub
+data:
+  # docker — контейнерное окружение (порт 8080, секреты в /run/secrets);
+  # demo — учебный стенд: включает тестовое завершение оплаты POST /api/payments/{id}/simulate
+  SPRING_PROFILES_ACTIVE: "docker,demo"
+  FITCLUB_SECRETS_DIR: /run/secrets
+
+  # Брокер сообщений (Service rabbitmq)
+  FITCLUB_RABBITMQ_HOST: rabbitmq
+  FITCLUB_RABBITMQ_PORT: "5672"
+
+  # Адреса сервисов (Service <name>:8080): REST-вызовы между сервисами и маршруты Gateway
+  FITCLUB_AUTH_URL: http://auth-service:8080
+  FITCLUB_SCHEDULE_URL: http://schedule-service:8080
+  FITCLUB_MEMBERSHIP_URL: http://membership-service:8080
+  FITCLUB_BOOKING_URL: http://booking-service:8080
+  FITCLUB_PAYMENT_URL: http://payment-service:8080
+  FITCLUB_NOTIFICATION_URL: http://notification-service:8080
+
+  # Уровень логов бизнес-кода (логи — JSON в stdout: kubectl logs)
+  LOGGING_LEVEL_COM_FITCLUB: INFO
+
+  # JVM: heap — 60% от лимита памяти контейнера, остальное — metaspace, потоки, буферы.
+  # При нехватке памяти процесс завершается, и Kubernetes перезапускает контейнер.
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -Duser.timezone=UTC"

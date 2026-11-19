@@ -1,0 +1,19 @@
+# membership-service: внутренний адрес http://membership-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=membership-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: membership-service
+  namespace: fitclub
+  labels:
+    app: membership-service
+    app.kubernetes.io/name: membership-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: membership-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

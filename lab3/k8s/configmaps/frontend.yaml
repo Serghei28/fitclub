@@ -1,0 +1,13 @@
+# Конфигурация Nginx (шаблон /etc/nginx/templates/default.conf.template в образе frontend).
+# Resolver Nginx не использует search-домены из resolv.conf, поэтому Gateway указан полным DNS-именем.
+# DNS-сервер (kube-dns) entrypoint образа берёт из /etc/resolv.conf Pod'а (NGINX_ENTRYPOINT_LOCAL_RESOLVERS).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: fitclub
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: fitclub
+data:
+  FITCLUB_GATEWAY_HOST: gateway.fitclub.svc.cluster.local

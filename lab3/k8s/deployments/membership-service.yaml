@@ -1,0 +1,130 @@
+# membership-service: Тарифы, заказы, абонементы, право на посещение.
+# Образ собирается из lab2/services/membership-service/Dockerfile (см. lab3/docker/build-images.ps1).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: membership-service
+  namespace: fitclub
+  labels:
+    app: membership-service
+    app.kubernetes.io/name: membership-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: membership-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Новый Pod поднимается раньше, чем останавливается старый: обновление без простоя
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: membership-service
+        app.kubernetes.io/name: membership-service
+        app.kubernetes.io/part-of: fitclub
+        app.kubernetes.io/component: backend
+    spec:
+      # Сервису не нужен доступ к API Kubernetes и переменные окружения других Service
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Файлы Secret получают группу 10001 и режим 0440: читать их может только процесс сервиса
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Ждём, пока postgres-bootstrap создаст роль и БД сервиса: иначе Flyway упадёт при старте,
+        # и Pod уйдёт в CrashLoopBackOff с нарастающей паузой
+        - name: wait-for-database
+          image: postgres:17.11-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              until PGPASSWORD="$(cat /run/secrets/db_membership_password)" \
+                    psql -h postgres -U membership_user -d membership_db -tAc 'select 1' >/dev/null 2>&1; do
+                echo "waiting for membership_db"; sleep 3
+              done
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      containers:
+        - name: membership-service
+          image: fitclub/membership-service:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          # Конфигурация — из ConfigMap (общая + своя), секреты — файлами из Secret
+          envFrom:
+            - configMapRef:
+                name: fitclub-common
+            - configMapRef:
+                name: membership-service-config
+          resources:
+            # requests — сколько планировщик резервирует на узле; limits — потолок контейнера.
+            # Замер в Docker: 410–460 МиБ без лимита (JVM берёт память «про запас»); с лимитом heap
+            # ограничен MaxRAMPercentage=60 от 768 МиБ, остальное — metaspace, потоки, буферы.
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          # Пока JVM стартует (до ~3 минут при одновременном запуске всех сервисов), liveness не проверяется
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          # /health — процесс жив; при трёх неудачах подряд kubelet перезапускает контейнер
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # /ready — собственная БД доступна и миграции Flyway применены; пока не готов, Pod исключается из Endpoints Service
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            # Корневая ФС только для чтения; Tomcat пишет временные файлы в /tmp
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: membership-service-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

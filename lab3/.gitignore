@@ -1,0 +1,6 @@
+# Настоящие Secret'ы никогда не попадают в Git: их создаёт scripts/create-secrets из lab2/secrets.
+# Если манифест Secret случайно сохранён в каталог k8s/secrets, он будет проигнорирован.
+k8s/secrets/*.yaml
+k8s/secrets/*.yml
+*.secret.yaml
+.env

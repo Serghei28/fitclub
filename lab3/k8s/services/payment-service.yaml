@@ -1,0 +1,19 @@
+# payment-service: внутренний адрес http://payment-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=payment-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: fitclub
+  labels:
+    app: payment-service
+    app.kubernetes.io/name: payment-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

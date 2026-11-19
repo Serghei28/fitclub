@@ -1,0 +1,98 @@
+# API Gateway (Spring Cloud Gateway): единая точка входа /api, проверка JWT, закрытие /internal.
+# Своей БД нет, состояния нет — масштабируется простым увеличением replicas.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: fitclub
+  labels:
+    app: gateway
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: gateway
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/part-of: fitclub
+        app.kubernetes.io/component: gateway
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Файлы Secret получают группу 10001 и режим 0440: читать их может только процесс сервиса
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: fitclub/gateway:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: fitclub-common
+            - configMapRef:
+                name: gateway-config
+          resources:
+            # WebFlux без JPA легче остальных сервисов: ~280 МиБ без лимита в Docker
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          # Пока JVM стартует (до ~3 минут при одновременном запуске всех сервисов), liveness не проверяется
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          # /health — процесс жив; при трёх неудачах подряд kubelet перезапускает контейнер
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # /ready — Gateway готов принимать запросы (не зависит от сервисов: их недоступность — это 503, а не перезапуск Gateway); пока не готов, Pod исключается из Endpoints Service
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: gateway-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

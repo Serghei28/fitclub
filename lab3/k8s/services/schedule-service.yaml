@@ -1,0 +1,19 @@
+# schedule-service: внутренний адрес http://schedule-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=schedule-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: schedule-service
+  namespace: fitclub
+  labels:
+    app: schedule-service
+    app.kubernetes.io/name: schedule-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: schedule-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

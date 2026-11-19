@@ -1,0 +1,125 @@
+# PostgreSQL 17: один сервер, шесть изолированных БД (роли и БД создаёт Job postgres-bootstrap).
+# StatefulSet, а не Deployment: стабильное имя Pod (postgres-0) и свой PersistentVolumeClaim,
+# который не удаляется вместе с Pod — данные переживают перезапуск и пересоздание Pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: fitclub
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: database
+spec:
+  # Headless Service (без виртуального IP): DNS-имя postgres указывает прямо на Pod postgres-0
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: fitclub
+  labels:
+    app: postgres
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: database
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/part-of: fitclub
+        app.kubernetes.io/component: database
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # Сразу пользователь postgres (UID 70 в alpine-образе), без запуска от root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.11-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: postgres
+            # Пароль администратора — файлом из Secret, не значением переменной
+            - name: POSTGRES_PASSWORD_FILE
+              value: /run/secrets/postgres_admin_password
+            - name: POSTGRES_INITDB_ARGS
+              value: "--auth-host=scram-sha-256 --encoding=UTF8"
+            # Подкаталог тома: корень PersistentVolume может содержать служебные файлы
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: TZ
+              value: UTC
+          resources:
+            # Замер в Docker: ~155 МиБ под нагрузкой шести сервисов
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: secrets
+          secret:
+            secretName: postgres-secrets
+            defaultMode: 0440
+            items:
+              - key: postgres_admin_password
+                path: postgres_admin_password
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

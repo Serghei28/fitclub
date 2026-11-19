@@ -1,0 +1,19 @@
+# auth-service: внутренний адрес http://auth-service:8080 (DNS кластера). Балансирует запросы между Pod'ами с меткой app=auth-service, которые прошли readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: fitclub
+  labels:
+    app: auth-service
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: fitclub
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: auth-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

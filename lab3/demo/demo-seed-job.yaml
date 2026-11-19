@@ -1,0 +1,71 @@
+# Наполнение demo-данными: тот же скрипт, что в Docker Compose (lab2/infrastructure/demo/seed.py),
+# лежит в ConfigMap demo-seed-script. Работает только через публичный API (http://gateway:8080),
+# в базы напрямую не пишет. Повторный запуск ничего не дублирует.
+#
+# Лежит вне каталога k8s/, чтобы kubectl apply -R -f k8s/ не наполнял кластер данными без явной команды.
+# Запуск: .\scripts\demo-seed.ps1  (или kubectl apply -f demo/ и kubectl logs -n fitclub job/demo-seed -f)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: demo-seed
+  namespace: fitclub
+  labels:
+    app: demo-seed
+    app.kubernetes.io/part-of: fitclub
+spec:
+  backoffLimit: 2
+  # Завершённый Job удаляется через час: повторный запуск — снова kubectl apply
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: demo-seed
+        app.kubernetes.io/part-of: fitclub
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: demo-seed
+          image: python:3.13.18-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-I", "/demo/seed.py"]
+          env:
+            - name: FITCLUB_API
+              value: http://gateway:8080
+            - name: FITCLUB_SECRETS_DIR
+              value: /run/secrets
+            - name: FITCLUB_AUTH_INITIAL_ADMIN_EMAIL
+              value: admin@fitclub.local
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: script
+              mountPath: /demo
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: demo-seed-script
+        - name: secrets
+          secret:
+            secretName: demo-seed-secrets
+            defaultMode: 0440
